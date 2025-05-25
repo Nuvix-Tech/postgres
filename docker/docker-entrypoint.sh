@@ -17,7 +17,7 @@ pg_sync_password() {
 	EOSQL
 
 	# execute the roles SQL file using docker_process_sql
-	docker_process_sql -f /docker-entrypoint-initdb.d/init-scripts/99-roles.sql
+	# docker_process_sql -f /docker-entrypoint-initdb.d/init-scripts/99-roles.sql
 
 	docker_temp_server_stop
 	unset PGPASSWORD

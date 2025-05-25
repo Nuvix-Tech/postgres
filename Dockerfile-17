@@ -169,7 +169,9 @@ COPY --chown=postgres:postgres ansible/files/pgsodium_getkey_urandom.sh.j2 /usr/
 COPY --chown=postgres:postgres ansible/files/postgresql_config/custom_read_replica.conf.j2 /etc/postgresql-custom/read-replica.conf
 COPY --chown=postgres:postgres ansible/files/postgresql_config/custom_walg.conf.j2 /etc/postgresql-custom/wal-g.conf
 COPY --chown=postgres:postgres ansible/files/walg_helper_scripts/wal_fetch.sh /home/postgres/wal_fetch.sh
-COPY --chown=postgres:postgres ansible/files/pgcat /etc/pgcat/pgcat
+# COPY --chown=postgres:postgres ansible/files/pgcat /etc/pgcat/pgcat
+COPY --chown=postgres:postgres ansible/files/pgcat.toml.j2 /etc/pgcat/config.toml
+
 COPY ansible/files/walg_helper_scripts/wal_change_ownership.sh /root/wal_change_ownership.sh
 
 RUN sed -i \
@@ -185,7 +187,7 @@ RUN sed -i \
     # Remove nuvix_admin line from pg_hba.conf
     sed -i '/local all  nuvix_admin     scram-sha-256/d' /etc/postgresql/pg_hba.conf && \
     # Add nuvix_admin mappings block to pg_ident.conf before supabase-specific users
-    sed -i '/# supabase-specific users/i\# nuvix_admin user mappings\nsupabase_map  postgres   nuvix_admin\nsupabase_map  root       nuvix_admin\nsupabase_map  ubuntu     nuvix_admin\n' /etc/postgresql/pg_ident.conf && \
+    sed -i '/# supabase-specific users/i\# nuvix_admin user mappings\nnuvix_map  postgres   nuvix_admin\nnuvix_map  root       nuvix_admin\nnuvix_map  ubuntu     nuvix_admin\n' /etc/postgresql/pg_ident.conf && \
     usermod -aG postgres wal-g && \
     mkdir -p /etc/postgresql-custom && \
     chown postgres:postgres /etc/postgresql-custom
@@ -217,6 +219,7 @@ ENTRYPOINT ["docker-entrypoint.sh"]
 HEALTHCHECK --interval=2s --timeout=2s --retries=10 CMD pg_isready -U postgres -h localhost
 STOPSIGNAL SIGINT
 EXPOSE 5432
+EXPOSE 5433
 
 ENV POSTGRES_HOST=/var/run/postgresql
 ENV POSTGRES_USER=nuvix_admin

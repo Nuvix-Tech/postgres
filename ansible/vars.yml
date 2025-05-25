@@ -57,3 +57,10 @@ adminmgr_release: 0.25.0
 
 vector_x86_deb: "https://packages.timber.io/vector/0.22.3/vector_0.22.3-1_amd64.deb"
 vector_arm_deb: "https://packages.timber.io/vector/0.22.3/vector_0.22.3-1_arm64.deb"
+
+postgres_password: {{ lookup('env', 'POSTGRES_PASSWORD') }}
+admin_password: {{  lookup('env', 'PGCAT_ADMIN_PASSWORD') }}
+super_password: {{ lookup('env', 'SUPER_PASSWORD') }}
+super_user: {{ lookup('env', 'POSTGRES_USER') }}
+postgres_db: {{ lookup('env', 'POSTGRES_DB') }}
+pool_size: 500
