@@ -1,0 +1,560 @@
+-- Some predefined roles don't exist in earlier versions of Postgres, so we
+-- exclude them in this test file. They're tested in version-specific test files
+-- (z_<ver>_roles.sql).
+--
+-- Currently those roles are:
+-- pg_create_subscription, pg_maintain, pg_use_reserved_connections
+-- all roles and attributes
+select
+  rolname,
+  rolcreaterole  ,
+  rolcanlogin    ,
+  rolsuper       ,
+  rolinherit     ,
+  rolcreatedb    ,
+  rolreplication ,
+  rolconnlimit   ,
+  rolbypassrls   ,
+  rolvaliduntil
+from pg_roles r
+where rolname not in ('pg_create_subscription', 'pg_maintain', 'pg_use_reserved_connections')
+order by rolname;
+          rolname           | rolcreaterole | rolcanlogin | rolsuper | rolinherit | rolcreatedb | rolreplication | rolconnlimit | rolbypassrls | rolvaliduntil 
+----------------------------+---------------+-------------+----------+------------+-------------+----------------+--------------+--------------+---------------
+ anon                       | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ authenticated              | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ authenticator              | f             | t           | f        | f          | f           | f              |           -1 | f            | 
+ nuvix             | t             | f           | f        | t          | t           | t              |           -1 | f            | 
+ pg_checkpoint              | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_database_owner          | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_execute_server_program  | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_monitor                 | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_read_all_data           | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_read_all_settings       | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_read_all_stats          | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_read_server_files       | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_signal_backend          | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_stat_scan_tables        | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_write_all_data          | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pg_write_server_files      | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pgbouncer                  | f             | t           | f        | t          | f           | f              |           -1 | f            | 
+ pgsodium_keyholder         | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pgsodium_keyiduser         | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pgsodium_keymaker          | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ pgtle_admin                | f             | f           | f        | t          | f           | f              |           -1 | f            | 
+ postgres                   | t             | t           | f        | t          | t           | t              |           -1 | t            | 
+ service_role               | f             | f           | f        | t          | f           | f              |           -1 | t            | 
+ nuvix_admin             | t             | t           | t        | t          | t           | t              |           -1 | t            | 
+ nuvix_admin        | t             | t           | f        | f          | f           | f              |           -1 | f            | 
+ nuvix_functions_admin   | t             | t           | f        | f          | f           | f              |           -1 | f            | 
+ supabase_read_only_user    | f             | t           | f        | t          | f           | f              |           -1 | t            | 
+ supabase_replication_admin | f             | t           | f        | t          | f           | t              |           -1 | f            | 
+ supabase_storage_admin     | t             | t           | f        | f          | f           | f              |           -1 | f            | 
+(29 rows)
+
+select
+  rolname,
+  rolconfig
+from pg_roles r
+where rolname not in ('pg_create_subscription', 'pg_maintain', 'pg_use_reserved_connections')
+order by rolname;
+          rolname           |                                    rolconfig                                    
+----------------------------+---------------------------------------------------------------------------------
+ anon                       | {statement_timeout=3s}
+ authenticated              | {statement_timeout=8s}
+ authenticator              | {session_preload_libraries=safeupdate,statement_timeout=8s,lock_timeout=8s}
+ nuvix             | 
+ pg_checkpoint              | 
+ pg_database_owner          | 
+ pg_execute_server_program  | 
+ pg_monitor                 | 
+ pg_read_all_data           | 
+ pg_read_all_settings       | 
+ pg_read_all_stats          | 
+ pg_read_server_files       | 
+ pg_signal_backend          | 
+ pg_stat_scan_tables        | 
+ pg_write_all_data          | 
+ pg_write_server_files      | 
+ pgbouncer                  | 
+ pgsodium_keyholder         | 
+ pgsodium_keyiduser         | 
+ pgsodium_keymaker          | 
+ pgtle_admin                | 
+ postgres                   | {"search_path=\"\\$user\", public, extensions"}
+ service_role               | 
+ nuvix_admin             | {"search_path=\"$user\", public, auth, extensions",log_statement=none}
+ nuvix_admin        | {search_path=auth,idle_in_transaction_session_timeout=60000,log_statement=none}
+ nuvix_functions_admin   | 
+ supabase_read_only_user    | 
+ supabase_replication_admin | 
+ supabase_storage_admin     | {search_path=storage,log_statement=none}
+(29 rows)
+
+-- all role memberships
+select
+    r.rolname as member,
+    g.rolname as "member_of (can become)",
+    m.admin_option
+from
+    pg_roles r
+left join
+    pg_auth_members m on r.oid = m.member
+left join
+    pg_roles g on m.roleid = g.oid
+where r.rolname not in ('pg_create_subscription', 'pg_maintain', 'pg_use_reserved_connections')
+and g.rolname not in ('pg_create_subscription', 'pg_maintain', 'pg_use_reserved_connections')
+order by
+    r.rolname, g.rolname;
+         member          | member_of (can become) | admin_option 
+-------------------------+------------------------+--------------
+ authenticator           | anon                   | f
+ authenticator           | authenticated          | f
+ authenticator           | service_role           | f
+ pg_monitor              | pg_read_all_settings   | f
+ pg_monitor              | pg_read_all_stats      | f
+ pg_monitor              | pg_stat_scan_tables    | f
+ pgsodium_keyholder      | pgsodium_keyiduser     | f
+ pgsodium_keymaker       | pgsodium_keyholder     | f
+ pgsodium_keymaker       | pgsodium_keyiduser     | f
+ postgres                | anon                   | f
+ postgres                | authenticated          | f
+ postgres                | pg_monitor             | f
+ postgres                | pg_read_all_data       | f
+ postgres                | pg_signal_backend      | f
+ postgres                | pgtle_admin            | f
+ postgres                | service_role           | f
+ supabase_read_only_user | pg_read_all_data       | f
+ supabase_storage_admin  | authenticator          | f
+(18 rows)
+
+-- Check all privileges of the roles on the schemas
+select schema_name, privilege_type, grantee, default_for
+from (
+    -- ALTER DEFAULT privileges on schemas
+    select
+        n.nspname as schema_name,
+        a.privilege_type,
+        r.rolname as grantee,
+        d.defaclrole::regrole as default_for,
+        case when n.nspname = 'public' then 0 else 1 end as schema_order
+    from
+        pg_default_acl d
+    join
+        pg_namespace n on d.defaclnamespace = n.oid
+    cross join lateral aclexplode(d.defaclacl) as a
+    join
+        pg_roles r on a.grantee = r.oid
+    where
+        -- PG17+, handled in version-specific test files
+        a.privilege_type != 'MAINTAIN'
+    union all
+    -- explicit grant usage and create on the schemas
+    select
+        n.nspname as schema_name,
+        a.privilege_type,
+        r.rolname as grantee,
+        n.nspowner::regrole as default_for,
+        case when n.nspname = 'public' then 0 else 1 end as schema_order
+    from
+        pg_namespace n
+    cross join lateral aclexplode(n.nspacl) as a
+    join
+        pg_roles r on a.grantee = r.oid
+    where
+        a.privilege_type in ('CREATE', 'USAGE')
+) sub
+order by schema_order, schema_name, privilege_type, grantee, default_for;
+    schema_name     | privilege_type |         grantee          |     default_for     
+--------------------+----------------+--------------------------+---------------------
+ public             | CREATE         | pg_database_owner        | pg_database_owner
+ public             | DELETE         | anon                     | nuvix_admin
+ public             | DELETE         | anon                     | postgres
+ public             | DELETE         | authenticated            | nuvix_admin
+ public             | DELETE         | authenticated            | postgres
+ public             | DELETE         | postgres                 | nuvix_admin
+ public             | DELETE         | postgres                 | postgres
+ public             | DELETE         | service_role             | nuvix_admin
+ public             | DELETE         | service_role             | postgres
+ public             | EXECUTE        | anon                     | nuvix_admin
+ public             | EXECUTE        | anon                     | postgres
+ public             | EXECUTE        | authenticated            | nuvix_admin
+ public             | EXECUTE        | authenticated            | postgres
+ public             | EXECUTE        | postgres                 | nuvix_admin
+ public             | EXECUTE        | postgres                 | postgres
+ public             | EXECUTE        | service_role             | nuvix_admin
+ public             | EXECUTE        | service_role             | postgres
+ public             | INSERT         | anon                     | nuvix_admin
+ public             | INSERT         | anon                     | postgres
+ public             | INSERT         | authenticated            | nuvix_admin
+ public             | INSERT         | authenticated            | postgres
+ public             | INSERT         | postgres                 | nuvix_admin
+ public             | INSERT         | postgres                 | postgres
+ public             | INSERT         | service_role             | nuvix_admin
+ public             | INSERT         | service_role             | postgres
+ public             | REFERENCES     | anon                     | nuvix_admin
+ public             | REFERENCES     | anon                     | postgres
+ public             | REFERENCES     | authenticated            | nuvix_admin
+ public             | REFERENCES     | authenticated            | postgres
+ public             | REFERENCES     | postgres                 | nuvix_admin
+ public             | REFERENCES     | postgres                 | postgres
+ public             | REFERENCES     | service_role             | nuvix_admin
+ public             | REFERENCES     | service_role             | postgres
+ public             | SELECT         | anon                     | nuvix_admin
+ public             | SELECT         | anon                     | nuvix_admin
+ public             | SELECT         | anon                     | postgres
+ public             | SELECT         | anon                     | postgres
+ public             | SELECT         | authenticated            | nuvix_admin
+ public             | SELECT         | authenticated            | nuvix_admin
+ public             | SELECT         | authenticated            | postgres
+ public             | SELECT         | authenticated            | postgres
+ public             | SELECT         | postgres                 | nuvix_admin
+ public             | SELECT         | postgres                 | nuvix_admin
+ public             | SELECT         | postgres                 | postgres
+ public             | SELECT         | postgres                 | postgres
+ public             | SELECT         | service_role             | nuvix_admin
+ public             | SELECT         | service_role             | nuvix_admin
+ public             | SELECT         | service_role             | postgres
+ public             | SELECT         | service_role             | postgres
+ public             | TRIGGER        | anon                     | nuvix_admin
+ public             | TRIGGER        | anon                     | postgres
+ public             | TRIGGER        | authenticated            | nuvix_admin
+ public             | TRIGGER        | authenticated            | postgres
+ public             | TRIGGER        | postgres                 | nuvix_admin
+ public             | TRIGGER        | postgres                 | postgres
+ public             | TRIGGER        | service_role             | nuvix_admin
+ public             | TRIGGER        | service_role             | postgres
+ public             | TRUNCATE       | anon                     | nuvix_admin
+ public             | TRUNCATE       | anon                     | postgres
+ public             | TRUNCATE       | authenticated            | nuvix_admin
+ public             | TRUNCATE       | authenticated            | postgres
+ public             | TRUNCATE       | postgres                 | nuvix_admin
+ public             | TRUNCATE       | postgres                 | postgres
+ public             | TRUNCATE       | service_role             | nuvix_admin
+ public             | TRUNCATE       | service_role             | postgres
+ public             | UPDATE         | anon                     | nuvix_admin
+ public             | UPDATE         | anon                     | nuvix_admin
+ public             | UPDATE         | anon                     | postgres
+ public             | UPDATE         | anon                     | postgres
+ public             | UPDATE         | authenticated            | nuvix_admin
+ public             | UPDATE         | authenticated            | nuvix_admin
+ public             | UPDATE         | authenticated            | postgres
+ public             | UPDATE         | authenticated            | postgres
+ public             | UPDATE         | postgres                 | nuvix_admin
+ public             | UPDATE         | postgres                 | nuvix_admin
+ public             | UPDATE         | postgres                 | postgres
+ public             | UPDATE         | postgres                 | postgres
+ public             | UPDATE         | service_role             | nuvix_admin
+ public             | UPDATE         | service_role             | nuvix_admin
+ public             | UPDATE         | service_role             | postgres
+ public             | UPDATE         | service_role             | postgres
+ public             | USAGE          | anon                     | nuvix_admin
+ public             | USAGE          | anon                     | pg_database_owner
+ public             | USAGE          | anon                     | postgres
+ public             | USAGE          | authenticated            | nuvix_admin
+ public             | USAGE          | authenticated            | pg_database_owner
+ public             | USAGE          | authenticated            | postgres
+ public             | USAGE          | pg_database_owner        | pg_database_owner
+ public             | USAGE          | postgres                 | nuvix_admin
+ public             | USAGE          | postgres                 | pg_database_owner
+ public             | USAGE          | postgres                 | postgres
+ public             | USAGE          | service_role             | nuvix_admin
+ public             | USAGE          | service_role             | pg_database_owner
+ public             | USAGE          | service_role             | postgres
+ auth               | CREATE         | nuvix           | nuvix_admin
+ auth               | CREATE         | nuvix_admin           | nuvix_admin
+ auth               | CREATE         | nuvix_admin      | nuvix_admin
+ auth               | DELETE         | nuvix           | nuvix_admin
+ auth               | DELETE         | postgres                 | nuvix_admin
+ auth               | EXECUTE        | nuvix           | nuvix_admin
+ auth               | EXECUTE        | postgres                 | nuvix_admin
+ auth               | INSERT         | nuvix           | nuvix_admin
+ auth               | INSERT         | postgres                 | nuvix_admin
+ auth               | REFERENCES     | nuvix           | nuvix_admin
+ auth               | REFERENCES     | postgres                 | nuvix_admin
+ auth               | SELECT         | nuvix           | nuvix_admin
+ auth               | SELECT         | nuvix           | nuvix_admin
+ auth               | SELECT         | postgres                 | nuvix_admin
+ auth               | SELECT         | postgres                 | nuvix_admin
+ auth               | TRIGGER        | nuvix           | nuvix_admin
+ auth               | TRIGGER        | postgres                 | nuvix_admin
+ auth               | TRUNCATE       | nuvix           | nuvix_admin
+ auth               | TRUNCATE       | postgres                 | nuvix_admin
+ auth               | UPDATE         | nuvix           | nuvix_admin
+ auth               | UPDATE         | nuvix           | nuvix_admin
+ auth               | UPDATE         | postgres                 | nuvix_admin
+ auth               | UPDATE         | postgres                 | nuvix_admin
+ auth               | USAGE          | anon                     | nuvix_admin
+ auth               | USAGE          | authenticated            | nuvix_admin
+ auth               | USAGE          | nuvix           | nuvix_admin
+ auth               | USAGE          | nuvix           | nuvix_admin
+ auth               | USAGE          | postgres                 | nuvix_admin
+ auth               | USAGE          | postgres                 | nuvix_admin
+ auth               | USAGE          | service_role             | nuvix_admin
+ auth               | USAGE          | nuvix_admin           | nuvix_admin
+ auth               | USAGE          | nuvix_admin      | nuvix_admin
+ extensions         | CREATE         | nuvix           | postgres
+ extensions         | CREATE         | postgres                 | postgres
+ extensions         | DELETE         | postgres                 | nuvix_admin
+ extensions         | EXECUTE        | postgres                 | nuvix_admin
+ extensions         | INSERT         | postgres                 | nuvix_admin
+ extensions         | REFERENCES     | postgres                 | nuvix_admin
+ extensions         | SELECT         | postgres                 | nuvix_admin
+ extensions         | SELECT         | postgres                 | nuvix_admin
+ extensions         | TRIGGER        | postgres                 | nuvix_admin
+ extensions         | TRUNCATE       | postgres                 | nuvix_admin
+ extensions         | UPDATE         | postgres                 | nuvix_admin
+ extensions         | UPDATE         | postgres                 | nuvix_admin
+ extensions         | USAGE          | anon                     | postgres
+ extensions         | USAGE          | authenticated            | postgres
+ extensions         | USAGE          | nuvix           | postgres
+ extensions         | USAGE          | postgres                 | nuvix_admin
+ extensions         | USAGE          | postgres                 | postgres
+ extensions         | USAGE          | service_role             | postgres
+ graphql            | CREATE         | nuvix_admin           | nuvix_admin
+ graphql            | DELETE         | anon                     | nuvix_admin
+ graphql            | DELETE         | authenticated            | nuvix_admin
+ graphql            | DELETE         | postgres                 | nuvix_admin
+ graphql            | DELETE         | service_role             | nuvix_admin
+ graphql            | EXECUTE        | anon                     | nuvix_admin
+ graphql            | EXECUTE        | authenticated            | nuvix_admin
+ graphql            | EXECUTE        | postgres                 | nuvix_admin
+ graphql            | EXECUTE        | service_role             | nuvix_admin
+ graphql            | INSERT         | anon                     | nuvix_admin
+ graphql            | INSERT         | authenticated            | nuvix_admin
+ graphql            | INSERT         | postgres                 | nuvix_admin
+ graphql            | INSERT         | service_role             | nuvix_admin
+ graphql            | REFERENCES     | anon                     | nuvix_admin
+ graphql            | REFERENCES     | authenticated            | nuvix_admin
+ graphql            | REFERENCES     | postgres                 | nuvix_admin
+ graphql            | REFERENCES     | service_role             | nuvix_admin
+ graphql            | SELECT         | anon                     | nuvix_admin
+ graphql            | SELECT         | anon                     | nuvix_admin
+ graphql            | SELECT         | authenticated            | nuvix_admin
+ graphql            | SELECT         | authenticated            | nuvix_admin
+ graphql            | SELECT         | postgres                 | nuvix_admin
+ graphql            | SELECT         | postgres                 | nuvix_admin
+ graphql            | SELECT         | service_role             | nuvix_admin
+ graphql            | SELECT         | service_role             | nuvix_admin
+ graphql            | TRIGGER        | anon                     | nuvix_admin
+ graphql            | TRIGGER        | authenticated            | nuvix_admin
+ graphql            | TRIGGER        | postgres                 | nuvix_admin
+ graphql            | TRIGGER        | service_role             | nuvix_admin
+ graphql            | TRUNCATE       | anon                     | nuvix_admin
+ graphql            | TRUNCATE       | authenticated            | nuvix_admin
+ graphql            | TRUNCATE       | postgres                 | nuvix_admin
+ graphql            | TRUNCATE       | service_role             | nuvix_admin
+ graphql            | UPDATE         | anon                     | nuvix_admin
+ graphql            | UPDATE         | anon                     | nuvix_admin
+ graphql            | UPDATE         | authenticated            | nuvix_admin
+ graphql            | UPDATE         | authenticated            | nuvix_admin
+ graphql            | UPDATE         | postgres                 | nuvix_admin
+ graphql            | UPDATE         | postgres                 | nuvix_admin
+ graphql            | UPDATE         | service_role             | nuvix_admin
+ graphql            | UPDATE         | service_role             | nuvix_admin
+ graphql            | USAGE          | anon                     | nuvix_admin
+ graphql            | USAGE          | anon                     | nuvix_admin
+ graphql            | USAGE          | authenticated            | nuvix_admin
+ graphql            | USAGE          | authenticated            | nuvix_admin
+ graphql            | USAGE          | postgres                 | nuvix_admin
+ graphql            | USAGE          | postgres                 | nuvix_admin
+ graphql            | USAGE          | service_role             | nuvix_admin
+ graphql            | USAGE          | service_role             | nuvix_admin
+ graphql            | USAGE          | nuvix_admin           | nuvix_admin
+ graphql_public     | CREATE         | nuvix_admin           | nuvix_admin
+ graphql_public     | DELETE         | anon                     | nuvix_admin
+ graphql_public     | DELETE         | authenticated            | nuvix_admin
+ graphql_public     | DELETE         | postgres                 | nuvix_admin
+ graphql_public     | DELETE         | service_role             | nuvix_admin
+ graphql_public     | EXECUTE        | anon                     | nuvix_admin
+ graphql_public     | EXECUTE        | authenticated            | nuvix_admin
+ graphql_public     | EXECUTE        | postgres                 | nuvix_admin
+ graphql_public     | EXECUTE        | service_role             | nuvix_admin
+ graphql_public     | INSERT         | anon                     | nuvix_admin
+ graphql_public     | INSERT         | authenticated            | nuvix_admin
+ graphql_public     | INSERT         | postgres                 | nuvix_admin
+ graphql_public     | INSERT         | service_role             | nuvix_admin
+ graphql_public     | REFERENCES     | anon                     | nuvix_admin
+ graphql_public     | REFERENCES     | authenticated            | nuvix_admin
+ graphql_public     | REFERENCES     | postgres                 | nuvix_admin
+ graphql_public     | REFERENCES     | service_role             | nuvix_admin
+ graphql_public     | SELECT         | anon                     | nuvix_admin
+ graphql_public     | SELECT         | anon                     | nuvix_admin
+ graphql_public     | SELECT         | authenticated            | nuvix_admin
+ graphql_public     | SELECT         | authenticated            | nuvix_admin
+ graphql_public     | SELECT         | postgres                 | nuvix_admin
+ graphql_public     | SELECT         | postgres                 | nuvix_admin
+ graphql_public     | SELECT         | service_role             | nuvix_admin
+ graphql_public     | SELECT         | service_role             | nuvix_admin
+ graphql_public     | TRIGGER        | anon                     | nuvix_admin
+ graphql_public     | TRIGGER        | authenticated            | nuvix_admin
+ graphql_public     | TRIGGER        | postgres                 | nuvix_admin
+ graphql_public     | TRIGGER        | service_role             | nuvix_admin
+ graphql_public     | TRUNCATE       | anon                     | nuvix_admin
+ graphql_public     | TRUNCATE       | authenticated            | nuvix_admin
+ graphql_public     | TRUNCATE       | postgres                 | nuvix_admin
+ graphql_public     | TRUNCATE       | service_role             | nuvix_admin
+ graphql_public     | UPDATE         | anon                     | nuvix_admin
+ graphql_public     | UPDATE         | anon                     | nuvix_admin
+ graphql_public     | UPDATE         | authenticated            | nuvix_admin
+ graphql_public     | UPDATE         | authenticated            | nuvix_admin
+ graphql_public     | UPDATE         | postgres                 | nuvix_admin
+ graphql_public     | UPDATE         | postgres                 | nuvix_admin
+ graphql_public     | UPDATE         | service_role             | nuvix_admin
+ graphql_public     | UPDATE         | service_role             | nuvix_admin
+ graphql_public     | USAGE          | anon                     | nuvix_admin
+ graphql_public     | USAGE          | anon                     | nuvix_admin
+ graphql_public     | USAGE          | authenticated            | nuvix_admin
+ graphql_public     | USAGE          | authenticated            | nuvix_admin
+ graphql_public     | USAGE          | postgres                 | nuvix_admin
+ graphql_public     | USAGE          | postgres                 | nuvix_admin
+ graphql_public     | USAGE          | service_role             | nuvix_admin
+ graphql_public     | USAGE          | service_role             | nuvix_admin
+ graphql_public     | USAGE          | nuvix_admin           | nuvix_admin
+ information_schema | CREATE         | nuvix_admin           | nuvix_admin
+ information_schema | USAGE          | nuvix_admin           | nuvix_admin
+ net                | CREATE         | nuvix_admin           | nuvix_admin
+ net                | USAGE          | anon                     | nuvix_admin
+ net                | USAGE          | authenticated            | nuvix_admin
+ net                | USAGE          | postgres                 | nuvix_admin
+ net                | USAGE          | service_role             | nuvix_admin
+ net                | USAGE          | nuvix_admin           | nuvix_admin
+ net                | USAGE          | nuvix_functions_admin | nuvix_admin
+ pg_catalog         | CREATE         | nuvix_admin           | nuvix_admin
+ pg_catalog         | USAGE          | nuvix_admin           | nuvix_admin
+ pgmq               | CREATE         | nuvix_admin           | nuvix_admin
+ pgmq               | SELECT         | pg_monitor               | nuvix_admin
+ pgmq               | SELECT         | pg_monitor               | nuvix_admin
+ pgmq               | USAGE          | pg_monitor               | nuvix_admin
+ pgmq               | USAGE          | nuvix_admin           | nuvix_admin
+ pgsodium           | CREATE         | nuvix_admin           | nuvix_admin
+ pgsodium           | DELETE         | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | INSERT         | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | REFERENCES     | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | SELECT         | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | SELECT         | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | TRIGGER        | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | TRUNCATE       | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | UPDATE         | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | UPDATE         | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | USAGE          | pgsodium_keyholder       | nuvix_admin
+ pgsodium           | USAGE          | nuvix_admin           | nuvix_admin
+ pgsodium_masks     | CREATE         | nuvix_admin           | nuvix_admin
+ pgsodium_masks     | DELETE         | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | EXECUTE        | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | INSERT         | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | REFERENCES     | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | SELECT         | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | SELECT         | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | TRIGGER        | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | TRUNCATE       | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | UPDATE         | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | UPDATE         | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | USAGE          | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | USAGE          | pgsodium_keyiduser       | nuvix_admin
+ pgsodium_masks     | USAGE          | nuvix_admin           | nuvix_admin
+ pgtle              | CREATE         | pgtle_admin              | nuvix_admin
+ pgtle              | CREATE         | nuvix_admin           | nuvix_admin
+ pgtle              | USAGE          | pgtle_admin              | nuvix_admin
+ pgtle              | USAGE          | nuvix_admin           | nuvix_admin
+ realtime           | CREATE         | nuvix_admin           | nuvix_admin
+ realtime           | DELETE         | nuvix           | nuvix_admin
+ realtime           | DELETE         | postgres                 | nuvix_admin
+ realtime           | EXECUTE        | nuvix           | nuvix_admin
+ realtime           | EXECUTE        | postgres                 | nuvix_admin
+ realtime           | INSERT         | nuvix           | nuvix_admin
+ realtime           | INSERT         | postgres                 | nuvix_admin
+ realtime           | REFERENCES     | nuvix           | nuvix_admin
+ realtime           | REFERENCES     | postgres                 | nuvix_admin
+ realtime           | SELECT         | nuvix           | nuvix_admin
+ realtime           | SELECT         | nuvix           | nuvix_admin
+ realtime           | SELECT         | postgres                 | nuvix_admin
+ realtime           | SELECT         | postgres                 | nuvix_admin
+ realtime           | TRIGGER        | nuvix           | nuvix_admin
+ realtime           | TRIGGER        | postgres                 | nuvix_admin
+ realtime           | TRUNCATE       | nuvix           | nuvix_admin
+ realtime           | TRUNCATE       | postgres                 | nuvix_admin
+ realtime           | UPDATE         | nuvix           | nuvix_admin
+ realtime           | UPDATE         | nuvix           | nuvix_admin
+ realtime           | UPDATE         | postgres                 | nuvix_admin
+ realtime           | UPDATE         | postgres                 | nuvix_admin
+ realtime           | USAGE          | nuvix           | nuvix_admin
+ realtime           | USAGE          | postgres                 | nuvix_admin
+ realtime           | USAGE          | postgres                 | nuvix_admin
+ realtime           | USAGE          | nuvix_admin           | nuvix_admin
+ repack             | CREATE         | postgres                 | nuvix_admin
+ repack             | CREATE         | nuvix_admin           | nuvix_admin
+ repack             | DELETE         | postgres                 | nuvix_admin
+ repack             | INSERT         | postgres                 | nuvix_admin
+ repack             | REFERENCES     | postgres                 | nuvix_admin
+ repack             | SELECT         | postgres                 | nuvix_admin
+ repack             | SELECT         | postgres                 | nuvix_admin
+ repack             | TRIGGER        | postgres                 | nuvix_admin
+ repack             | TRUNCATE       | postgres                 | nuvix_admin
+ repack             | UPDATE         | postgres                 | nuvix_admin
+ repack             | UPDATE         | postgres                 | nuvix_admin
+ repack             | USAGE          | postgres                 | nuvix_admin
+ repack             | USAGE          | postgres                 | nuvix_admin
+ repack             | USAGE          | nuvix_admin           | nuvix_admin
+ storage            | CREATE         | nuvix           | nuvix_admin
+ storage            | CREATE         | nuvix_admin           | nuvix_admin
+ storage            | CREATE         | supabase_storage_admin   | nuvix_admin
+ storage            | DELETE         | anon                     | postgres
+ storage            | DELETE         | authenticated            | postgres
+ storage            | DELETE         | postgres                 | postgres
+ storage            | DELETE         | service_role             | postgres
+ storage            | EXECUTE        | anon                     | postgres
+ storage            | EXECUTE        | authenticated            | postgres
+ storage            | EXECUTE        | postgres                 | postgres
+ storage            | EXECUTE        | service_role             | postgres
+ storage            | INSERT         | anon                     | postgres
+ storage            | INSERT         | authenticated            | postgres
+ storage            | INSERT         | postgres                 | postgres
+ storage            | INSERT         | service_role             | postgres
+ storage            | REFERENCES     | anon                     | postgres
+ storage            | REFERENCES     | authenticated            | postgres
+ storage            | REFERENCES     | postgres                 | postgres
+ storage            | REFERENCES     | service_role             | postgres
+ storage            | SELECT         | anon                     | postgres
+ storage            | SELECT         | anon                     | postgres
+ storage            | SELECT         | authenticated            | postgres
+ storage            | SELECT         | authenticated            | postgres
+ storage            | SELECT         | postgres                 | postgres
+ storage            | SELECT         | postgres                 | postgres
+ storage            | SELECT         | service_role             | postgres
+ storage            | SELECT         | service_role             | postgres
+ storage            | TRIGGER        | anon                     | postgres
+ storage            | TRIGGER        | authenticated            | postgres
+ storage            | TRIGGER        | postgres                 | postgres
+ storage            | TRIGGER        | service_role             | postgres
+ storage            | TRUNCATE       | anon                     | postgres
+ storage            | TRUNCATE       | authenticated            | postgres
+ storage            | TRUNCATE       | postgres                 | postgres
+ storage            | TRUNCATE       | service_role             | postgres
+ storage            | UPDATE         | anon                     | postgres
+ storage            | UPDATE         | anon                     | postgres
+ storage            | UPDATE         | authenticated            | postgres
+ storage            | UPDATE         | authenticated            | postgres
+ storage            | UPDATE         | postgres                 | postgres
+ storage            | UPDATE         | postgres                 | postgres
+ storage            | UPDATE         | service_role             | postgres
+ storage            | UPDATE         | service_role             | postgres
+ storage            | USAGE          | anon                     | nuvix_admin
+ storage            | USAGE          | anon                     | postgres
+ storage            | USAGE          | authenticated            | nuvix_admin
+ storage            | USAGE          | authenticated            | postgres
+ storage            | USAGE          | nuvix           | nuvix_admin
+ storage            | USAGE          | postgres                 | nuvix_admin
+ storage            | USAGE          | postgres                 | postgres
+ storage            | USAGE          | service_role             | nuvix_admin
+ storage            | USAGE          | service_role             | postgres
+ storage            | USAGE          | nuvix_admin           | nuvix_admin
+ storage            | USAGE          | supabase_storage_admin   | nuvix_admin
+ topology           | CREATE         | nuvix_admin           | nuvix_admin
+ topology           | USAGE          | nuvix_admin           | nuvix_admin
+ vault              | CREATE         | nuvix_admin           | nuvix_admin
+ vault              | USAGE          | postgres                 | nuvix_admin
+ vault              | USAGE          | service_role             | nuvix_admin
+ vault              | USAGE          | nuvix_admin           | nuvix_admin
+(389 rows)
+
