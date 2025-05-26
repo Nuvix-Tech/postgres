@@ -169,9 +169,6 @@ COPY --chown=postgres:postgres ansible/files/pgsodium_getkey_urandom.sh.j2 /usr/
 COPY --chown=postgres:postgres ansible/files/postgresql_config/custom_read_replica.conf.j2 /etc/postgresql-custom/read-replica.conf
 COPY --chown=postgres:postgres ansible/files/postgresql_config/custom_walg.conf.j2 /etc/postgresql-custom/wal-g.conf
 COPY --chown=postgres:postgres ansible/files/walg_helper_scripts/wal_fetch.sh /home/postgres/wal_fetch.sh
-# COPY --chown=postgres:postgres ansible/files/pgcat /etc/pgcat/pgcat
-COPY --chown=postgres:postgres ansible/files/pgcat.toml.j2 /etc/pgcat/config.toml
-
 COPY ansible/files/walg_helper_scripts/wal_change_ownership.sh /root/wal_change_ownership.sh
 
 RUN sed -i \
@@ -219,7 +216,6 @@ ENTRYPOINT ["docker-entrypoint.sh"]
 HEALTHCHECK --interval=2s --timeout=2s --retries=10 CMD pg_isready -U postgres -h localhost
 STOPSIGNAL SIGINT
 EXPOSE 5432
-EXPOSE 5433
 
 ENV POSTGRES_HOST=/var/run/postgresql
 ENV POSTGRES_USER=nuvix_admin
