@@ -9,9 +9,9 @@ create or replace function auth.uid() returns text as $$
   select nullif(current_setting('request.auth.user.$id', true), '')::text;
 $$ language sql stable;
 
--- Gets the User ID from the request cookie
-create or replace function auth.role() returns text as $$
-  select nullif(current_setting('request.auth.role', true), '')::text;
+-- Gets the User Roles from the request cookie
+create or replace function auth.role() returns text[] as $$
+  select nullif(current_setting('request.auth.roles', true), '')::text[];
 $$ language sql stable;
 
 -- Gets the User email
