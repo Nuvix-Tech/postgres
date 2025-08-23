@@ -39,9 +39,11 @@ ARG index_advisor_release=0.2.0
 ARG supautils_release=2.2.0
 ARG wal_g_release=3.0.5
 
-FROM ubuntu:focal as base
+FROM ubuntu:focal AS base
 
-RUN apt update -y && apt install -y \
+# Combine apt updates and installs for better caching and fewer layers
+RUN apt-get update -y && \
+    apt-get install -y --no-install-recommends \
     curl \
     gnupg \
     lsb-release \
@@ -49,116 +51,110 @@ RUN apt update -y && apt install -y \
     wget \
     sudo \
     tree \
-    && apt clean
+    tzdata \
+    build-essential \
+    checkinstall \
+    cmake \
+    locales \
+    ca-certificates && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
 
+# Set up timezone non-interactively
+RUN ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
+    dpkg-reconfigure --frontend noninteractive tzdata
 
-RUN adduser --system  --home /var/lib/postgresql --no-create-home --shell /bin/bash --group --gecos "PostgreSQL administrator" postgres
-RUN adduser --system  --no-create-home --shell /bin/bash --group  wal-g
+# Set up locales
+RUN echo "C.UTF-8 UTF-8" > /etc/locale.gen && \
+    echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && \
+    locale-gen && \
+    localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8 && \
+    localedef -i C -c -f UTF-8 -A /usr/share/locale/locale.alias C.UTF-8
+
+ENV LANG en_US.UTF-8
+ENV LANGUAGE en_US:en
+ENV LC_ALL en_US.UTF-8
+ENV LOCALE_ARCHIVE /usr/lib/locale/locale-archive
+
+# Add users early for better caching
+RUN adduser --system --home /var/lib/postgresql --no-create-home --shell /bin/bash --group --gecos "PostgreSQL administrator" postgres && \
+    adduser --system --no-create-home --shell /bin/bash --group wal-g && \
+    usermod -aG postgres wal-g
+
+# Install Nix with custom config for caching
 RUN curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install linux \
---init none \
---no-confirm \
---extra-conf "substituters = https://cache.nixos.org https://nix-postgres-artifacts.s3.amazonaws.com" \
---extra-conf "trusted-public-keys = nix-postgres-artifacts:dGZlQOvKcNEjvT7QEAJbcV6b6uk7VF/hWMjhYleiaLI=% cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
+    --init none \
+    --no-confirm \
+    --extra-conf "substituters = https://cache.nixos.org https://nix-postgres-artifacts.s3.amazonaws.com" \
+    --extra-conf "trusted-public-keys = nix-postgres-artifacts:dGZlQOvKcNEjvT7QEAJbcV6b6uk7VF/hWMjhYleiaLI= cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
 
 ENV PATH="${PATH}:/nix/var/nix/profiles/default/bin"
 
-COPY . /nixpg
+# Copy context and install Nix packages in a builder stage for better isolation
+FROM base AS nix-builder
 
+COPY . /nixpg
 WORKDIR /nixpg
 
-RUN nix profile install .#psql_17/bin 
+# Install PostgreSQL and extensions via Nix, gc to minimize store
+RUN nix profile install .#psql_17/bin && \
+    nix store gc
 
-RUN nix store gc
+# Install wal-g separately
+RUN nix profile install .#wal-g-3 && \
+    nix store gc
 
-WORKDIR /
+# Prepare directories and symlinks in a separate stage if needed, but do it in final
 
+FROM base AS gosu
 
+ARG TARGETARCH
+ARG GOSU_VERSION=1.16
+ARG GOSU_GPG_KEY=B42F6819007F00F88E364FD4036A9C25BF357DD4
+
+# Download and verify gosu
+ADD https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$TARGETARCH /usr/local/bin/gosu
+ADD https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$TARGETARCH.asc /usr/local/bin/gosu.asc
+
+RUN gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys $GOSU_GPG_KEY && \
+    gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu && \
+    gpgconf --kill all && \
+    chmod +x /usr/local/bin/gosu && \
+    rm /usr/local/bin/gosu.asc
+
+FROM base AS production
+
+# Copy Nix-installed binaries and shares from builder
+COPY --from=nix-builder /nix /nix
+COPY --from=nix-builder /nix/var/nix/profiles/default/bin /nix/var/nix/profiles/default/bin
+ENV PATH="${PATH}:/nix/var/nix/profiles/default/bin"
+
+# Copy wal-g from nix-builder
+COPY --from=nix-builder /nix/var/nix/profiles/default/bin/wal-g-3 /usr/local/bin/wal-g
+
+# Copy gosu
+COPY --from=gosu /usr/local/bin/gosu /usr/local/bin/gosu
+
+# Set up PostgreSQL directories and symlinks
 RUN mkdir -p /usr/lib/postgresql/bin \
     /usr/lib/postgresql/share/postgresql \
     /usr/share/postgresql \
     /var/lib/postgresql \
-    && chown -R postgres:postgres /usr/lib/postgresql \
-    && chown -R postgres:postgres /var/lib/postgresql \
-    && chown -R postgres:postgres /usr/share/postgresql
-
-# Create symbolic links
-RUN ln -s /nix/var/nix/profiles/default/bin/* /usr/lib/postgresql/bin/ \
-    && ln -s /nix/var/nix/profiles/default/bin/* /usr/bin/ \
-    && chown -R postgres:postgres /usr/bin
-
-# Create symbolic links for PostgreSQL shares
-RUN ln -s /nix/var/nix/profiles/default/share/postgresql/* /usr/lib/postgresql/share/postgresql/
-RUN ln -s /nix/var/nix/profiles/default/share/postgresql/* /usr/share/postgresql/
-RUN chown -R postgres:postgres /usr/lib/postgresql/share/postgresql/
-RUN chown -R postgres:postgres /usr/share/postgresql/ 
-# Create symbolic links for contrib directory
-RUN tree /nix > /tmp/tree.txt && cat /tmp/tree.txt && cat /tmp/tree.txt >&2
-
-RUN chown -R postgres:postgres /usr/lib/postgresql
-
-RUN ln -sf /usr/lib/postgresql/share/postgresql/timezonesets /usr/share/postgresql/timezonesets
-
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends tzdata
-
-RUN ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
-    dpkg-reconfigure --frontend noninteractive tzdata
-
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-    build-essential \
-    checkinstall \
-    cmake 
+    /var/run/postgresql \
+    /etc/postgresql-custom \
+    /usr/share/postgresql/extension && \
+    chown -R postgres:postgres /usr/lib/postgresql /usr/share/postgresql /var/lib/postgresql /var/run/postgresql /etc/postgresql-custom && \
+    ln -s /nix/var/nix/profiles/default/bin/* /usr/lib/postgresql/bin/ && \
+    ln -s /nix/var/nix/profiles/default/bin/* /usr/bin/ && \
+    chown -R postgres:postgres /usr/bin && \
+    ln -s /nix/var/nix/profiles/default/share/postgresql/* /usr/lib/postgresql/share/postgresql/ && \
+    ln -s /nix/var/nix/profiles/default/share/postgresql/* /usr/share/postgresql/ && \
+    chown -R postgres:postgres /usr/lib/postgresql/share/postgresql/ /usr/share/postgresql/ && \
+    ln -sf /usr/lib/postgresql/share/postgresql/timezonesets /usr/share/postgresql/timezonesets
 
 ENV PGDATA=/var/lib/postgresql/data
 
-####################
-# setup-wal-g.yml
-####################
-FROM base as walg
-ARG wal_g_release
-
-WORKDIR /nixpg
-
-RUN nix profile install .#wal-g-3 && \
-    ln -s /nix/var/nix/profiles/default/bin/wal-g-3 /tmp/wal-g
-
-RUN nix store gc
-
-WORKDIR /
-# ####################
-# # Download gosu for easy step-down from root
-# ####################
-FROM base as gosu
-ARG TARGETARCH
-# Install dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends \
-   gnupg \
-   ca-certificates \
-   && rm -rf /var/lib/apt/lists/*
-# Download binary
-ARG GOSU_VERSION=1.16
-ARG GOSU_GPG_KEY=B42F6819007F00F88E364FD4036A9C25BF357DD4
-ADD https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$TARGETARCH \
-    /usr/local/bin/gosu
-ADD https://github.com/tianon/gosu/releases/download/$GOSU_VERSION/gosu-$TARGETARCH.asc \
-    /usr/local/bin/gosu.asc
-# Verify checksum
-RUN gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys $GOSU_GPG_KEY && \
-    gpg --batch --verify /usr/local/bin/gosu.asc /usr/local/bin/gosu && \
-    gpgconf --kill all && \
-    chmod +x /usr/local/bin/gosu
-
-# ####################
-# # Build final image
-# ####################
-FROM gosu as production
-RUN id postgres || (echo "postgres user does not exist" && exit 1)
-# # Setup extensions
-COPY --from=walg /tmp/wal-g /usr/local/bin/
-
-# # Initialise configs
+# Copy configs and scripts, chown in one go
 COPY --chown=postgres:postgres ansible/files/postgresql_config/postgresql.conf.j2 /etc/postgresql/postgresql.conf
 COPY --chown=postgres:postgres ansible/files/postgresql_config/pg_hba.conf.j2 /etc/postgresql/pg_hba.conf
 COPY --chown=postgres:postgres ansible/files/postgresql_config/pg_ident.conf.j2 /etc/postgresql/pg_ident.conf
@@ -171,45 +167,32 @@ COPY --chown=postgres:postgres ansible/files/postgresql_config/custom_walg.conf.
 COPY --chown=postgres:postgres ansible/files/walg_helper_scripts/wal_fetch.sh /home/postgres/wal_fetch.sh
 COPY ansible/files/walg_helper_scripts/wal_change_ownership.sh /root/wal_change_ownership.sh
 
+# Apply all config modifications in a single RUN for better caching
 RUN sed -i \
     -e "s|#unix_socket_directories = '/tmp'|unix_socket_directories = '/var/run/postgresql'|g" \
     -e "s|#session_preload_libraries = ''|session_preload_libraries = 'supautils'|g" \
     -e "s|#include = '/etc/postgresql-custom/supautils.conf'|include = '/etc/postgresql-custom/supautils.conf'|g" \
-    -e "s|#include = '/etc/postgresql-custom/wal-g.conf'|include = '/etc/postgresql-custom/wal-g.conf'|g" /etc/postgresql/postgresql.conf && \
+    -e "s|#include = '/etc/postgresql-custom/wal-g.conf'|include = '/etc/postgresql-custom/wal-g.conf'|g" \
+    /etc/postgresql/postgresql.conf && \
     echo "cron.database_name = 'postgres'" >> /etc/postgresql/postgresql.conf && \
-    #echo "pljava.libjvm_location = '/usr/lib/jvm/java-11-openjdk-${TARGETARCH}/lib/server/libjvm.so'" >> /etc/postgresql/postgresql.conf && \
     echo "pgsodium.getkey_script= '/usr/lib/postgresql/bin/pgsodium_getkey.sh'" >> /etc/postgresql/postgresql.conf && \
     echo "vault.getkey_script= '/usr/lib/postgresql/bin/pgsodium_getkey.sh'" >> /etc/postgresql/postgresql.conf && \
     echo 'auto_explain.log_min_duration = 10s' >> /etc/postgresql/postgresql.conf && \
-    # Remove nuvix_admin line from pg_hba.conf
     sed -i '/local all  nuvix_admin     scram-sha-256/d' /etc/postgresql/pg_hba.conf && \
-    # Add nuvix_admin mappings block to pg_ident.conf before supabase-specific users
     sed -i '/# supabase-specific users/i\# nuvix_admin user mappings\nnuvix_map  postgres   nuvix_admin\nnuvix_map  root       nuvix_admin\nnuvix_map  ubuntu     nuvix_admin\n' /etc/postgresql/pg_ident.conf && \
-    usermod -aG postgres wal-g && \
-    mkdir -p /etc/postgresql-custom && \
-    chown postgres:postgres /etc/postgresql-custom
+    sed -i 's/ timescaledb,//g;' /etc/postgresql/postgresql.conf && \
+    sed -i 's/db_user_namespace = off/#db_user_namespace = off/g;' /etc/postgresql/postgresql.conf && \
+    sed -i 's/ timescaledb,//g; s/ plv8,//g' /etc/postgresql-custom/supautils.conf && \
+    chmod +x /usr/lib/postgresql/bin/pgsodium_getkey.sh && \
+    ln -s /usr/lib/postgresql/bin/pgsodium_getkey.sh /usr/share/postgresql/extension/pgsodium_getkey
 
-    # Remove items from postgresql.conf
-RUN sed -i 's/ timescaledb,//g;' "/etc/postgresql/postgresql.conf" 
-    #as of pg 16.4 + this db_user_namespace totally deprecated and will break the server if setting is present
-RUN sed -i 's/db_user_namespace = off/#db_user_namespace = off/g;' "/etc/postgresql/postgresql.conf" 
-RUN sed -i 's/ timescaledb,//g; s/ plv8,//g' "/etc/postgresql-custom/supautils.conf" 
-
-
-
-# # Include schema migrations
+# Include schema migrations
 COPY migrations/db /docker-entrypoint-initdb.d/
 COPY ansible/files/stat_extension.sql /docker-entrypoint-initdb.d/migrations/00-extension.sql
 
-# # Add upstream entrypoint script
-COPY --from=gosu /usr/local/bin/gosu /usr/local/bin/gosu
-ADD --chmod=0755 \
-    https://github.com/docker-library/postgres/raw/master/17/bullseye/docker-entrypoint.sh \
-    /usr/local/bin/upstream-docker-entrypoint.sh
-# # Add custom entrypoint script
+# Add entrypoint scripts
+ADD --chmod=0755 https://github.com/docker-library/postgres/raw/master/17/bullseye/docker-entrypoint.sh /usr/local/bin/upstream-docker-entrypoint.sh
 COPY --chmod=0755 docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-
-RUN mkdir -p /var/run/postgresql && chown postgres:postgres /var/run/postgresql
 
 ENTRYPOINT ["docker-entrypoint.sh"]
 
@@ -221,17 +204,5 @@ ENV POSTGRES_HOST=/var/run/postgresql
 ENV POSTGRES_USER=nuvix_admin
 ENV POSTGRES_DB=postgres
 ENV POSTGRES_INITDB_ARGS="--allow-group-access --locale-provider=icu --encoding=UTF-8 --icu-locale=en_US.UTF-8"
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    locales \
-    && rm -rf /var/lib/apt/lists/* && \
-    localedef -i en_US -c -f UTF-8 -A /usr/share/locale/locale.alias en_US.UTF-8 \
-    && localedef -i C -c -f UTF-8 -A /usr/share/locale/locale.alias C.UTF-8 
-RUN echo "C.UTF-8 UTF-8" > /etc/locale.gen && echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen && locale-gen
-ENV LANG en_US.UTF-8
-ENV LANGUAGE en_US:en
-ENV LC_ALL en_US.UTF-8
-ENV LOCALE_ARCHIVE /usr/lib/locale/locale-archive
-RUN mkdir -p /usr/share/postgresql/extension/ && \
-    ln -s /usr/lib/postgresql/bin/pgsodium_getkey.sh /usr/share/postgresql/extension/pgsodium_getkey && \
-    chmod +x /usr/lib/postgresql/bin/pgsodium_getkey.sh
+
 CMD ["postgres", "-D", "/etc/postgresql"]
