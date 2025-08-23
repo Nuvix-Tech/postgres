@@ -35,5 +35,5 @@ GRANT USAGE ON SCHEMA auth, system TO nuvix_functions_admin, postgres, anon, aut
 GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA auth TO nuvix_functions_admin, postgres, anon, authenticated, service_role;
 
 GRANT USAGE ON SCHEMA system TO nuvix_functions_admin, postgres, service_role;
-GRANT EXECUTE ON create_schema(text, text, text) TO nuvix_functions_admin, postgres, service_role;
+GRANT EXECUTE ON FUNCTION create_schema(text, text, text) TO nuvix_functions_admin, postgres, service_role;
 -- migrate:down
