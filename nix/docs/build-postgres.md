@@ -112,9 +112,7 @@ $ readlink result
 /nix/store/p7ziflx0000s28bfb213jsghrczknkc4-postgresql-and-plugins-14.8
 ```
 
-
 ## Using `nix develop`
-
 
 `nix develop .` will just drop you in a subshell with
 tools you need _ready to go instantly_. That's all you need to do! And once that

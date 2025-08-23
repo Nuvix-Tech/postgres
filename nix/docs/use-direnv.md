@@ -88,7 +88,6 @@ What just happened is that we populated the ambient shell environment with tools
 specified inside of `flake.nix` &mdash; we'll cover Flakes later. But for now,
 your tools are provisioned!
 
-
 ## The power of `direnv`
 
 `direnv` with Nix is a frighteningly good development combination for many

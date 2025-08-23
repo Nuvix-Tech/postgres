@@ -1,16 +1,16 @@
 There are basically two types of tests you can add:
 
 - pgTAP based tests, and
-- pg\_regress tests
+- pg_regress tests
 - Migration tests.
 
 In all cases, a number of extensions may be installed into the database for
 use; you can see those in both [postgresql.conf.in](../tests/postgresql.conf.in)
 and [prime.sql](../tests/prime.sql) (extensions may be enabled in either place.)
 
-## pg\_regress tests
+## pg_regress tests
 
-pg\_regress tests are in [tests/sql](./../tests/sql/) with output in [tests/expected](./../tests/expected/).
+pg_regress tests are in [tests/sql](./../tests/sql/) with output in [tests/expected](./../tests/expected/).
 To create a new test, create a new SQL file in [tests/sql](./../tests/sql/)
 
 Next, for each current major version of postgres, we run a "flake check" build one at a time.
@@ -29,8 +29,8 @@ Next, review the logs to identify where the test output was written
 
 ```
 postgres> CREATE EXTENSION IF NOT EXISTS index_advisor;
-postgres> CREATE EXTENSION  
-postgres> (using postmaster on localhost, port 5432)    
+postgres> CREATE EXTENSION
+postgres> (using postmaster on localhost, port 5432)
 postgres> ============== running regression test queries        ==============
 postgres> test new_test                     ... diff: /nix/store/5gk419ddz7mzzwhc9j6yj5i8lkw67pdl-tests/expected/new_test.out: No such file or directory
 postgres> diff command failed with status 512: diff  "/nix/store/5gk419ddz7mzzwhc9j6yj5i8lkw67pdl-tests/expected/new_test.out" "/nix/store/2fbrvnnr7iz6yigyf0rb0vxnyqvrgxzp-postgres-15.6-check-harness/regression_output/results/new_test.out" > "/nix/store/2fbrvnnr7iz6yigyf0rb0vxnyqvrgxzp-postgres-15.6-check-harness/regression_output/results/new_test.out.diff
@@ -47,7 +47,6 @@ Then you can review the contents of `regression_output/results/new_test.out` to 
 If it does match your expectations, copy the file to [tests/expected](./../tests/expected/) and the test will pass on the next run.
 
 If the output does not match your expectations, update the `<new_test>.sql` file, re-run with `nix flake check -L` and try again
-
 
 ## pgTAP tests
 

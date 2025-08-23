@@ -2,7 +2,6 @@
 
 from the root of the `supabase/postgres` project, you can run the following commands:
 
-
 ```shell
 Usage: nix run .#dbmate-tool -- [options]
 
@@ -31,6 +30,7 @@ or
 
 nix run github:supabase/postgres/mybranch#dbmate-tool -- --version 15
 ```
+
 # supabase/migrations
 
 `supabase/migrations` is a consolidation of SQL migrations from:
@@ -41,8 +41,6 @@ nix run github:supabase/postgres/mybranch#dbmate-tool -- --version 15
 - supabase/infrastructure (internal)
 
 aiming to provide a single source of truth for migrations on the platform that can be depended upon by those components. For more information on goals see [the RFC](https://www.notion.so/supabase/Centralize-SQL-Migrations-cd3847ae027d4f2bba9defb2cc82f69a)
-
-
 
 ## How it was Created
 
@@ -58,8 +56,6 @@ For compatibility with hosted projects, we include [migrate.sh](migrate.sh) that
 3. Finalize role passwords with `/etc/postgresql.schema.sql` if present.
 
 Additionally, [supabase/postgres](https://github.com/supabase/postgres/blob/develop/ansible/playbook-docker.yml#L9) image contains several migration scripts to configure default extensions. These are run first by docker entrypoint and included in ami by ansible.
-
-
 
 ## Guidelines
 
@@ -91,10 +87,12 @@ Then, in your main terminal window, run:
 
 nix develop
 ```
-in the root of `supabase/postgres`. 
 
-Next run: 
-``` shell
+in the root of `supabase/postgres`.
+
+Next run:
+
+```shell
 # Create a new migration (make sure to specify the migrations directory)
 dbmate --migrations-dir="migrations/db/migrations" new '<some message>'
 ```
@@ -124,6 +122,7 @@ Then, populate the migration at `./db/migrations/xxxxxxxxx_<some_message>` and m
 ```shell
 docker-compose run --rm dbmate up
 ```
+
 ### Updating schema.sql for each major version
 
 After making changes to migrations, you should update the schema.sql files for each major version of PostgreSQL:
@@ -134,7 +133,7 @@ After making changes to migrations, you should update the schema.sql files for e
 nix run .#dbmate-tool -- --version all
 ```
 
-This will create automatically  schema.sql file for each major version of PostgreSQL and OrioleDB (the files are named like `schema-<ver>`, `schema-oriole-<ver>`). Commit these changes to your repository and push to your branch. The workflow in `.github/workflows/test.yml`  will re-run this command in CI, and perform a git diff to verify the idempotency of the migrations, and that the latest changes have been committed.
+This will create automatically schema.sql file for each major version of PostgreSQL and OrioleDB (the files are named like `schema-<ver>`, `schema-oriole-<ver>`). Commit these changes to your repository and push to your branch. The workflow in `.github/workflows/test.yml` will re-run this command in CI, and perform a git diff to verify the idempotency of the migrations, and that the latest changes have been committed.
 
 ## Testing
 
