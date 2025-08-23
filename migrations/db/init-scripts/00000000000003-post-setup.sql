@@ -100,16 +100,36 @@ BEGIN
 END
 $$;
 
--- Nuvix dashboard user
-GRANT ALL ON DATABASE postgres TO nuvix;
-GRANT ALL ON SCHEMA auth TO nuvix;
-GRANT ALL ON SCHEMA extensions TO nuvix;
-GRANT ALL ON ALL TABLES IN SCHEMA auth TO nuvix;
-GRANT ALL ON ALL TABLES IN SCHEMA extensions TO nuvix;
--- GRANT ALL ON ALL TABLES IN SCHEMA AUTH TO nuvix;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO nuvix;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA extensions TO nuvix;
-GRANT ALL ON ALL ROUTINES IN SCHEMA auth TO nuvix;
-GRANT ALL ON ALL ROUTINES IN SCHEMA extensions TO nuvix;
+DO $$
+DECLARE
+    sch text;
+BEGIN
+    FOREACH sch IN ARRAY ARRAY['auth', 'system', 'core']
+    LOOP
+        -- Revoke from public and limited roles
+        EXECUTE format('REVOKE ALL ON SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', sch);
+        EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', sch);
+        EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', sch);
+        EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', sch);
+        EXECUTE format('REVOKE ALL ON ALL PROCEDURES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', sch);
+        EXECUTE format('REVOKE ALL ON ALL ROUTINES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', sch);
+
+        -- Grant full access to nuvix_admin and nuvix
+        EXECUTE format('GRANT USAGE, CREATE ON SCHEMA %I TO nuvix_admin, nuvix;', sch);
+        EXECUTE format('GRANT ALL ON ALL TABLES IN SCHEMA %I TO nuvix_admin, nuvix;', sch);
+        EXECUTE format('GRANT ALL ON ALL SEQUENCES IN SCHEMA %I TO nuvix_admin, nuvix;', sch);
+        EXECUTE format('GRANT ALL ON ALL FUNCTIONS IN SCHEMA %I TO nuvix_admin, nuvix;', sch);
+        EXECUTE format('GRANT ALL ON ALL PROCEDURES IN SCHEMA %I TO nuvix_admin, nuvix;', sch);
+        EXECUTE format('GRANT ALL ON ALL ROUTINES IN SCHEMA %I TO nuvix_admin, nuvix;', sch);
+
+        -- Set default privileges for future objects
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON TABLES TO nuvix_admin, nuvix;', sch);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON SEQUENCES TO nuvix_admin, nuvix;', sch);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON FUNCTIONS TO nuvix_admin, nuvix;', sch);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON ROUTINES TO nuvix_admin, nuvix;', sch);
+    END LOOP;
+END $$;
+
+SELECT system.create_schema('public', 'managed', 'Public schema for user-defined tables and functions');
 
 -- migrate:down

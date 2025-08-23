@@ -61,30 +61,115 @@ BEGIN
 END;
 $$;
 
+-- System helper: create or update a schema record
+CREATE OR REPLACE FUNCTION system.create_schema(
+    schema_name TEXT,
+    schema_type TEXT,
+    schema_description TEXT DEFAULT NULL
+)
+RETURNS BIGINT AS $$
+DECLARE
+    new_schema_id BIGINT;
+BEGIN
+    -- create the schema in Postgres if it doesn't exist
+    EXECUTE format('CREATE SCHEMA IF NOT EXISTS %I', schema_name);
+
+    -- insert into metadata table
+    INSERT INTO system.schemas (name, type, description)
+    VALUES (schema_name, schema_type, schema_description)
+    ON CONFLICT (name) DO UPDATE
+        SET type = EXCLUDED.type,
+            description = EXCLUDED.description,
+            updated_at = NOW()
+    RETURNING id INTO new_schema_id;
+
+    -- Apply baseline permissions for the schema
+    PERFORM system.set_schema_permissions(schema_name, schema_type);
+
+    RETURN new_schema_id;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+GRANT EXECUTE ON FUNCTION system.create_schema(TEXT, TEXT, TEXT) TO postgres;
+
 -- System helper: apply baseline API grants to a schema
-CREATE OR REPLACE FUNCTION system.apply_schema_grants(target_schema text)
-RETURNS void
+CREATE OR REPLACE FUNCTION system.set_schema_permissions(
+    p_schema text,
+    p_type text -- 'document' | 'managed' | 'unmanaged'
+) RETURNS void
 LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = system, pg_catalog
 AS $$
 BEGIN
-  -- Allow runtime roles to see objects
-  EXECUTE format('GRANT USAGE ON SCHEMA %I TO anon, authenticated, postgres', target_schema);
+    -- Validate schema type
+    IF p_type NOT IN ('document', 'managed', 'unmanaged') THEN
+        RAISE EXCEPTION 'Invalid schema type: %. Must be document, managed, or unmanaged.', p_type;
+    END IF;
 
-  -- Existing objects
-  EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO anon, authenticated', target_schema);
-  EXECUTE format('GRANT INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO authenticated', target_schema);
-  EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO anon, authenticated', target_schema);
-  EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO anon, authenticated', target_schema);
+    -- Revoke everything first
+    EXECUTE format('REVOKE ALL ON SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
+    EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
+    EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
+    EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
+    EXECUTE format('REVOKE ALL ON ALL ROUTINES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
 
-  -- Future objects
-  EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT ON TABLES TO anon, authenticated', target_schema);
-  EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT INSERT, UPDATE, DELETE ON TABLES TO authenticated', target_schema);
-  EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT EXECUTE ON FUNCTIONS TO anon, authenticated', target_schema);
-  EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated', target_schema);
+    -- Always grant full to nuvix + nuvix_admin
+    EXECUTE format('GRANT USAGE, CREATE ON SCHEMA %I TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('GRANT ALL ON ALL TABLES IN SCHEMA %I TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('GRANT ALL ON ALL SEQUENCES IN SCHEMA %I TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('GRANT ALL ON ALL FUNCTIONS IN SCHEMA %I TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('GRANT ALL ON ALL ROUTINES IN SCHEMA %I TO nuvix_admin, nuvix;', p_schema);
+
+    -- Defaults for nuvix + nuvix_admin
+    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON TABLES TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON SEQUENCES TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON FUNCTIONS TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON ROUTINES TO nuvix_admin, nuvix;', p_schema);
+
+    IF p_type = 'document' THEN
+        -- postgres = read-only
+        EXECUTE format('GRANT USAGE ON SCHEMA %I TO postgres;', p_schema);
+        EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO postgres;', p_schema);
+        EXECUTE format('GRANT SELECT ON ALL SEQUENCES IN SCHEMA %I TO postgres;', p_schema);
+        EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO postgres;', p_schema);
+        EXECUTE format('GRANT EXECUTE ON ALL ROUTINES IN SCHEMA %I TO postgres;', p_schema);
+
+        -- Defaults for postgres
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT ON TABLES TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT ON SEQUENCES TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT EXECUTE ON FUNCTIONS TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT EXECUTE ON ROUTINES TO postgres;', p_schema);
+
+        -- anon + authenticated: no access
+
+    ELSE
+        -- postgres = full access
+        EXECUTE format('GRANT USAGE, CREATE ON SCHEMA %I TO postgres;', p_schema);
+        EXECUTE format('GRANT ALL ON ALL TABLES IN SCHEMA %I TO postgres;', p_schema);
+        EXECUTE format('GRANT ALL ON ALL SEQUENCES IN SCHEMA %I TO postgres;', p_schema);
+        EXECUTE format('GRANT ALL ON ALL FUNCTIONS IN SCHEMA %I TO postgres;', p_schema);
+        EXECUTE format('GRANT ALL ON ALL ROUTINES IN SCHEMA %I TO postgres;', p_schema);
+
+        -- Defaults for postgres
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON TABLES TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON SEQUENCES TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON FUNCTIONS TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON ROUTINES TO postgres;', p_schema);
+
+        -- anon + authenticated = read/write (but no CREATE/DROP)
+        EXECUTE format('GRANT USAGE ON SCHEMA %I TO anon, authenticated;', p_schema);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO anon, authenticated;', p_schema);
+        EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO anon, authenticated;', p_schema);
+        EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO anon, authenticated;', p_schema);
+        EXECUTE format('GRANT EXECUTE ON ALL ROUTINES IN SCHEMA %I TO anon, authenticated;', p_schema);
+
+        -- Defaults for anon + authenticated
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT EXECUTE ON FUNCTIONS TO anon, authenticated;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT EXECUTE ON ROUTINES TO anon, authenticated;', p_schema);
+    END IF;
 END;
 $$;
+
 
 -- System helper: when create table on managed schema
 CREATE OR REPLACE FUNCTION SYSTEM.ON_MANAGED_TABLE_CREATE () 

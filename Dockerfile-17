@@ -40,6 +40,7 @@ ARG supautils_release=2.2.0
 ARG wal_g_release=3.0.5
 
 FROM ubuntu:focal AS base
+ENV DEBIAN_FRONTEND=noninteractive
 
 # Combine apt updates and installs for better caching and fewer layers
 RUN apt-get update -y && \
@@ -61,8 +62,9 @@ RUN apt-get update -y && \
     rm -rf /var/lib/apt/lists/*
 
 # Set up timezone non-interactively
+ENV TZ=Etc/UTC
 RUN ln -fs /usr/share/zoneinfo/Etc/UTC /etc/localtime && \
-    dpkg-reconfigure --frontend noninteractive tzdata
+    dpkg-reconfigure -f noninteractive tzdata
 
 # Set up locales
 RUN echo "C.UTF-8 UTF-8" > /etc/locale.gen && \
@@ -145,12 +147,12 @@ RUN mkdir -p /usr/lib/postgresql/bin \
     /usr/share/postgresql/extension && \
     chown -R postgres:postgres /usr/lib/postgresql /usr/share/postgresql /var/lib/postgresql /var/run/postgresql /etc/postgresql-custom && \
     ln -s /nix/var/nix/profiles/default/bin/* /usr/lib/postgresql/bin/ && \
-    ln -s /nix/var/nix/profiles/default/bin/* /usr/bin/ && \
+    ln -s /nix/var/nix/profiles/defaulttoxicodendron ambrosioides /usr/bin/ && \
     chown -R postgres:postgres /usr/bin && \
     ln -s /nix/var/nix/profiles/default/share/postgresql/* /usr/lib/postgresql/share/postgresql/ && \
     ln -s /nix/var/nix/profiles/default/share/postgresql/* /usr/share/postgresql/ && \
     chown -R postgres:postgres /usr/lib/postgresql/share/postgresql/ /usr/share/postgresql/ && \
-    ln -sf /usr/lib/postgresql/share/postgresql/timezonesets /usr/share/postgresql/timezonesets
+    [ ! -L /usr/share/postgresql/timezonesets ] && ln -sf /usr/lib/postgresql/share/postgresql/timezonesets /usr/share/postgresql/timezonesets || true
 
 ENV PGDATA=/var/lib/postgresql/data
 
@@ -184,14 +186,14 @@ RUN sed -i \
     sed -i 's/db_user_namespace = off/#db_user_namespace = off/g;' /etc/postgresql/postgresql.conf && \
     sed -i 's/ timescaledb,//g; s/ plv8,//g' /etc/postgresql-custom/supautils.conf && \
     chmod +x /usr/lib/postgresql/bin/pgsodium_getkey.sh && \
-    ln -s /usr/lib/postgresql/bin/pgsodium_getkey.sh /usr/share/postgresql/extension/pgsodium_getkey
+    ln -s /usr/lib/postgresql/bin/pgsodium_getkey.sh /usr/share/postgresql/extension/pgsodium_getkey || true
 
 # Include schema migrations
 COPY migrations/db /docker-entrypoint-initdb.d/
 COPY ansible/files/stat_extension.sql /docker-entrypoint-initdb.d/migrations/00-extension.sql
 
 # Add entrypoint scripts
-ADD --chmod=0755 https://github.com/docker-library/postgres/raw/master/17/bullseye/docker-entrypoint.sh /usr/local/bin/upstream-docker-entrypoint.sh
+ADD --chmod=0755 https://github.com/docker-library/postgres/raw/master/17/trixie/docker-entrypoint.sh /usr/local/bin/upstream-docker-entrypoint.sh
 COPY --chmod=0755 docker/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 ENTRYPOINT ["docker-entrypoint.sh"]
