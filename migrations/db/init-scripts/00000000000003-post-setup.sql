@@ -101,7 +101,6 @@ END
 $$;
 
 -- Nuvix dashboard user
-CREATE ROLE nuvix NOSUPERUSER CREATEDB CREATEROLE REPLICATION;
 GRANT ALL ON DATABASE postgres TO nuvix;
 GRANT ALL ON SCHEMA auth TO nuvix;
 GRANT ALL ON SCHEMA extensions TO nuvix;

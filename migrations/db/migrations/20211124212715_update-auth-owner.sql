@@ -10,9 +10,9 @@ END $$;
 
 DO $$
 BEGIN
-    ALTER FUNCTION auth.role owner to nuvix_admin;
+    ALTER FUNCTION auth.roles owner to nuvix_admin;
 EXCEPTION WHEN OTHERS THEN
-    RAISE WARNING 'Error encountered when changing owner of auth.role to nuvix_admin';
+    RAISE WARNING 'Error encountered when changing owner of auth.roles to nuvix_admin';
 END $$;
 
 DO $$

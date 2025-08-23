@@ -33,7 +33,11 @@ do \$\$
 begin
   -- postgres role is pre-created during AMI build
   if not exists (select from pg_roles where rolname = 'postgres') then
-    create role postgres superuser login password '$PGPASSWORD';
+    create role postgres NOSUPERUSER 
+    NOCREATEDB 
+    NOCREATEROLE 
+    REPLICATION 
+    BYPASSRLS login password '$PGPASSWORD';
     alter database postgres owner to postgres;
   end if;
 end \$\$
@@ -51,14 +55,18 @@ EOSQL
     done
 else
     psql -v ON_ERROR_STOP=1 --no-password --no-psqlrc -U nuvix_admin <<EOSQL
-  create role postgres superuser login password '$PGPASSWORD';
+    create role postgres NOSUPERUSER 
+    NOCREATEDB 
+    NOCREATEROLE 
+    REPLICATION 
+    BYPASSRLS login password '$PGPASSWORD';
   alter database postgres owner to postgres;
 EOSQL
     # run init scripts as postgres user
-    DBMATE_MIGRATIONS_DIR="$db/init-scripts" DATABASE_URL="postgres://postgres:$connect" dbmate --no-dump-schema migrate
-    psql -v ON_ERROR_STOP=1 --no-password --no-psqlrc -U postgres -c "ALTER USER nuvix_admin WITH PASSWORD '$PGPASSWORD'"
+    DBMATE_MIGRATIONS_DIR="$db/init-scripts" DATABASE_URL="postgres://nuvix_admin:$connect" dbmate --no-dump-schema migrate
+    # psql -v ON_ERROR_STOP=1 --no-password --no-psqlrc -U postgres -c "ALTER USER nuvix_admin WITH PASSWORD '$PGPASSWORD'"
     # run migrations as super user - postgres user demoted in post-setup
-    DBMATE_MIGRATIONS_DIR="$db/migrations" DATABASE_URL="postgres://nuvix_admin:$connect" dbmate --no-dump-schema migrate
+    # DBMATE_MIGRATIONS_DIR="$db/migrations" DATABASE_URL="postgres://nuvix_admin:$connect" dbmate --no-dump-schema migrate
 fi
 
 # run any post migration script to update role passwords

@@ -5,7 +5,7 @@
 create publication nuvix_realtime;
 
 -- Nuvix super admin
-alter user  nuvix_admin with superuser createdb createrole replication bypassrls;
+alter user nuvix_admin with superuser createdb createrole replication bypassrls;
 
 -- Nuvix replication user
 create user nuvix_replication_admin with login replication;
