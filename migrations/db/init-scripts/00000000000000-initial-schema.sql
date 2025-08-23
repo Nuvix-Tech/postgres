@@ -4,9 +4,10 @@
 -- defaults to empty publication
 create publication nuvix_realtime;
 
-CREATE ROLE nuvix NOLOGIN INHERIT; -- safe internal role
+CREATE ROLE nuvix NOLOGIN INHERIT; -- safe internal role     
 GRANT nuvix_admin TO nuvix;
 
+CREATE USER nuvix_functions_admin NOINHERIT CREATEROLE LOGIN NOREPLICATION;
 -- Nuvix replication user
 create user nuvix_replication_admin with login replication;
 
