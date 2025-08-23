@@ -10,7 +10,7 @@ create or replace function auth.uid() returns text as $$
 $$ language sql stable;
 
 -- Gets the User Roles from the request cookie
-create or replace function auth.role() returns text[] as $$
+create or replace function auth.roles() returns text[] as $$
   select nullif(current_setting('request.auth.roles', true), '')::text[];
 $$ language sql stable;
 

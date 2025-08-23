@@ -1,6 +1,6 @@
 -- migrate:up
 
-ALTER ROLE nuvix_admin SET search_path TO "\$user",public,auth,extensions;
+ALTER ROLE nuvix_admin SET search_path TO "\$user",system,core,public,auth,extensions;
 ALTER ROLE postgres SET search_path TO "\$user",public,extensions;
 
 -- Trigger for pg_cron
@@ -100,20 +100,17 @@ BEGIN
 END
 $$;
 
--- Supabase dashboard user
+-- Nuvix dashboard user
 CREATE ROLE nuvix NOSUPERUSER CREATEDB CREATEROLE REPLICATION;
 GRANT ALL ON DATABASE postgres TO nuvix;
 GRANT ALL ON SCHEMA auth TO nuvix;
 GRANT ALL ON SCHEMA extensions TO nuvix;
-GRANT ALL ON SCHEMA storage TO nuvix;
 GRANT ALL ON ALL TABLES IN SCHEMA auth TO nuvix;
 GRANT ALL ON ALL TABLES IN SCHEMA extensions TO nuvix;
--- GRANT ALL ON ALL TABLES IN SCHEMA storage TO nuvix;
+-- GRANT ALL ON ALL TABLES IN SCHEMA AUTH TO nuvix;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO nuvix;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA storage TO nuvix;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA extensions TO nuvix;
 GRANT ALL ON ALL ROUTINES IN SCHEMA auth TO nuvix;
-GRANT ALL ON ALL ROUTINES IN SCHEMA storage TO nuvix;
 GRANT ALL ON ALL ROUTINES IN SCHEMA extensions TO nuvix;
 
 -- migrate:down
