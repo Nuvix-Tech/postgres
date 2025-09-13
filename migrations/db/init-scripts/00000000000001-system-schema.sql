@@ -18,8 +18,8 @@ CREATE TABLE IF NOT EXISTS system.schemas (
 
 -- Indexes for schemas
 CREATE INDEX IF NOT EXISTS schema_name_index ON system.schemas (name);
+CREATE UNIQUE INDEX IF NOT EXISTS schema_name_type_index ON system.schemas (name, type);
 CREATE INDEX IF NOT EXISTS schema_id_index ON system.schemas (id);
-CREATE INDEX IF NOT EXISTS schema_type_index ON system.schemas (type);
 CREATE INDEX IF NOT EXISTS schema_enabled_index ON system.schemas (enabled);
 
 
@@ -38,6 +38,29 @@ CREATE TABLE IF NOT EXISTS system.tables (
 CREATE UNIQUE INDEX idx_tables_oid ON system.tables (oid);
 CREATE INDEX idx_tables_schema_id ON system.tables (schema_id);
 CREATE INDEX idx_tables_name_schema_id ON system.tables (name, schema_id);
+
+-- api logs
+CREATE TABLE IF NOT EXISTS system.api_logs (
+    id BIGSERIAL PRIMARY KEY,
+    request_id UUID NOT NULL,
+    method VARCHAR(10) NOT NULL,
+    path TEXT NOT NULL,
+    status SMALLINT NOT NULL,
+    timestamp TIMESTAMPTZ NOT NULL,
+    client_ip INET,
+    user_agent TEXT,
+    url TEXT,
+    latency_ms DOUBLE PRECISION,
+    region VARCHAR(50),
+    error TEXT,
+    resource VARCHAR(50),
+    metadata JSONB
+);
+
+CREATE INDEX idx_api_logs_timestamp ON system.api_logs (timestamp DESC);
+CREATE INDEX idx_api_logs_request_id ON system.api_logs (request_id);
+CREATE INDEX idx_api_logs_status_ts ON system.api_logs (status, timestamp DESC);
+CREATE INDEX idx_api_logs_metadata ON system.api_logs USING GIN (metadata);
 
 alter user nuvix_admin SET search_path TO system, core, auth, extensions;
 
@@ -170,6 +193,133 @@ BEGIN
 END;
 $$;
 
+-- System helper: delete related perms rows
+CREATE OR REPLACE FUNCTION system.on_managed_table_row_delete()
+RETURNS TRIGGER AS $$
+DECLARE
+    perms_table_oid oid;
+    schema_name text;
+    table_name text;
+BEGIN
+    -- Get the schema and table name of the managed table
+    SELECT
+        n.nspname, c.relname
+    INTO
+        schema_name, table_name
+    FROM
+        pg_class c
+    JOIN
+        pg_namespace n ON n.oid = c.relnamespace
+    WHERE
+        c.oid = TG_RELID;
+
+    -- Look up the corresponding _perms table OID from our metadata
+    SELECT
+        t.perms_oid
+    INTO
+        perms_table_oid
+    FROM
+        system.tables t
+    JOIN
+        system.schemas s ON t.schema_id = s.id
+    WHERE
+        s.name = schema_name AND t.name = table_name;
+
+    -- If the _perms table exists, delete the row
+    IF perms_table_oid IS NOT NULL THEN
+        EXECUTE format('DELETE FROM %I.%I WHERE row_id = $1', schema_name, table_name || '_perms')
+        USING OLD._id;
+    END IF;
+
+    RETURN OLD;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- System helper: apply rls policies for managed schema
+CREATE OR REPLACE FUNCTION system.apply_table_policies(tbl regclass)
+RETURNS void AS $$
+DECLARE
+    perm text;
+    policy_name text;
+    sql text;
+BEGIN
+    -- Enable RLS always
+    EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY;', tbl);
+
+    -- Loop over CRUD permissions
+    FOR perm IN SELECT unnest(ARRAY['read','create','update','delete']) LOOP
+        policy_name := format('nx_table_%s', perm);
+
+        -- Drop existing
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %s;', policy_name, tbl);
+
+        -- Build correct clause depending on action
+        IF perm = 'read' THEN
+            sql := format($p$
+                CREATE POLICY %I ON %s
+                FOR SELECT
+                USING (
+                    EXISTS (
+                        SELECT 1
+                        FROM %s_perms p
+                        WHERE p.row_id IS NULL
+                          AND p.permission = 'read'
+                          AND auth.roles() && p.roles
+                    )
+                );
+            $p$, policy_name, tbl, tbl);
+
+        ELSIF perm = 'create' THEN
+            sql := format($p$
+                CREATE POLICY %I ON %s
+                FOR INSERT
+                WITH CHECK (
+                    EXISTS (
+                        SELECT 1
+                        FROM %s_perms p
+                        WHERE p.row_id IS NULL
+                          AND p.permission = 'create'
+                          AND auth.roles() && p.roles
+                    )
+                );
+            $p$, policy_name, tbl, tbl);
+
+        ELSIF perm = 'update' THEN
+            sql := format($p$
+                CREATE POLICY %I ON %s
+                FOR UPDATE
+                WITH CHECK (
+                    EXISTS (
+                        SELECT 1
+                        FROM %s_perms p
+                        WHERE p.row_id IS NULL
+                          AND p.permission = 'update'
+                          AND auth.roles() && p.roles
+                    )
+                );
+            $p$, policy_name, tbl, tbl);
+
+        ELSIF perm = 'delete' THEN
+            sql := format($p$
+                CREATE POLICY %I ON %s
+                FOR DELETE
+                USING (
+                    EXISTS (
+                        SELECT 1
+                        FROM %s_perms p
+                        WHERE p.row_id IS NULL
+                          AND p.permission = 'delete'
+                          AND auth.roles() && p.roles
+                    )
+                );
+            $p$, policy_name, tbl, tbl);
+        END IF;
+
+        -- Execute create policy
+        EXECUTE sql;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
 
 -- System helper: when create table on managed schema
 CREATE OR REPLACE FUNCTION SYSTEM.ON_MANAGED_TABLE_CREATE () 
@@ -333,6 +483,18 @@ BEGIN
       sname, tname, 'Permission system for ' || sname || '.' || tname
     );
 
+    -- apply rls system 
+    EXECUTE format('SELECT system.apply_table_policies(%L)', sname || '.' || tname);
+
+    -- apply on row delete trigger
+    EXECUTE format(
+        'CREATE TRIGGER on_row_delete '
+        'AFTER DELETE ON %I.%I '
+        'FOR EACH ROW '
+        'EXECUTE FUNCTION system.on_managed_table_row_delete()',
+        sname, tname
+    );
+
     -- Lookup OIDs
     SELECT c.oid INTO tbl_oid
     FROM pg_class c
@@ -408,19 +570,6 @@ BEGIN
 
         -- Get the new table name from the object identity
         new_table_name := split_part(r.object_identity, '.', 2);
-
-        -- Block alterations if table is in system schema
-        IF schema_type = 'system' AND current_user != 'nuvix_admin' THEN
-            RAISE EXCEPTION 
-                'Permission denied: Cannot alter system table %.%. '
-                'Only nuvix_admin can perform this operation.',
-                r.schema_name, new_table_name;
-        END IF;
-
-        -- Skip if schema is system (after admin check)
-        IF schema_type = 'system' THEN
-            CONTINUE;
-        END IF;
 
         -- Skip if schema is not managed
         IF schema_type != 'managed' THEN
@@ -622,14 +771,6 @@ BEGIN
             END IF;           
         END IF;
 
-        -- Additional protection: Block drops if table is in system schema
-        IF schema_type = 'system' AND current_user != 'nuvix_admin' THEN
-            RAISE EXCEPTION 
-                'Permission denied: Cannot drop system table %.%. '
-                'Only nuvix_admin can perform this operation.',
-                r.schema_name, table_info.name;
-        END IF;
-
     END LOOP;
 END;
 $$ LANGUAGE PLPGSQL;
@@ -699,3 +840,90 @@ DROP EVENT TRIGGER IF EXISTS BLOCK_PERMS_CREATION;
 
 CREATE EVENT TRIGGER BLOCK_PERMS_CREATION ON DDL_COMMAND_END WHEN TAG IN ('CREATE TABLE', 'CREATE VIEW')
 EXECUTE FUNCTION SYSTEM.BLOCK_PERMS_CREATION ();
+
+
+-- system helper: other rls related function 
+CREATE OR REPLACE FUNCTION system.apply_row_policies(tbl regclass)
+RETURNS void AS $$
+DECLARE
+    perm text;
+    policy_name text;
+    sql text;
+BEGIN
+    -- Enable RLS always
+    EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY;', tbl);
+
+    -- Loop over CRUD permissions
+    FOR perm IN SELECT unnest(ARRAY['read','create','update','delete']) LOOP
+        policy_name := format('nx_row_%s', tbl::text, perm);
+
+        -- Drop existing
+        EXECUTE format('DROP POLICY IF EXISTS %I ON %s;', policy_name, tbl);
+
+        -- Build correct clause depending on action
+        IF perm = 'read' THEN
+            sql := format($p$
+                CREATE POLICY %I ON %s
+                FOR SELECT
+                USING (
+                    EXISTS (
+                        SELECT 1
+                        FROM %s_perms p
+                        WHERE (p.row_id IS NULL OR p.row_id = %s._id)
+                          AND p.permission = 'read'
+                          AND auth.roles() && p.roles
+                    )
+                );
+            $p$, policy_name, tbl, tbl, tbl);
+
+        ELSIF perm = 'create' THEN
+            sql := format($p$
+                CREATE POLICY %I ON %s
+                FOR INSERT
+                WITH CHECK (
+                    EXISTS (
+                        SELECT 1
+                        FROM %s_perms p
+                        WHERE (p.row_id IS NULL OR p.row_id = %s._id)
+                          AND p.permission = 'create'
+                          AND auth.roles() && p.roles
+                    )
+                );
+            $p$, policy_name, tbl, tbl, tbl);
+
+        ELSIF perm = 'update' THEN
+            sql := format($p$
+                CREATE POLICY %I ON %s
+                FOR UPDATE
+                WITH CHECK (
+                    EXISTS (
+                        SELECT 1
+                        FROM %s_perms p
+                        WHERE (p.row_id IS NULL OR p.row_id = %s._id)
+                          AND p.permission = 'update'
+                          AND auth.roles() && p.roles
+                    )
+                );
+            $p$, policy_name, tbl, tbl, tbl);
+
+        ELSIF perm = 'delete' THEN
+            sql := format($p$
+                CREATE POLICY %I ON %s
+                FOR DELETE
+                USING (
+                    EXISTS (
+                        SELECT 1
+                        FROM %s_perms p
+                        WHERE (p.row_id IS NULL OR p.row_id = %s._id)
+                          AND p.permission = 'delete'
+                          AND auth.roles() && p.roles
+                    )
+                );
+            $p$, policy_name, tbl, tbl, tbl);
+        END IF;
+
+        -- Execute create policy
+        EXECUTE sql;
+    END LOOP;
+END;
+$$ LANGUAGE plpgsql;
