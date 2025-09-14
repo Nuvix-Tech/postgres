@@ -127,12 +127,15 @@ BEGIN
         RAISE EXCEPTION 'Invalid schema type: %. Must be document, managed, or unmanaged.', p_type;
     END IF;
 
+    -- Make sure schema is owned by postgres
+    EXECUTE format('ALTER SCHEMA %I OWNER TO postgres;', p_schema);
+
     -- Revoke everything first
-    EXECUTE format('REVOKE ALL ON SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
-    EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
-    EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
-    EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
-    EXECUTE format('REVOKE ALL ON ALL ROUTINES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated;', p_schema);
+    EXECUTE format('REVOKE ALL ON SCHEMA %I FROM PUBLIC, postgres, anon, authenticated, service_role;', p_schema);
+    EXECUTE format('REVOKE ALL ON ALL TABLES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated, service_role;', p_schema);
+    EXECUTE format('REVOKE ALL ON ALL SEQUENCES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated, service_role;', p_schema);
+    EXECUTE format('REVOKE ALL ON ALL FUNCTIONS IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated, service_role;', p_schema);
+    EXECUTE format('REVOKE ALL ON ALL ROUTINES IN SCHEMA %I FROM PUBLIC, postgres, anon, authenticated, service_role;', p_schema);
 
     -- Always grant full to nuvix + nuvix_admin
     EXECUTE format('GRANT USAGE, CREATE ON SCHEMA %I TO nuvix_admin, nuvix;', p_schema);
@@ -142,10 +145,10 @@ BEGIN
     EXECUTE format('GRANT ALL ON ALL ROUTINES IN SCHEMA %I TO nuvix_admin, nuvix;', p_schema);
 
     -- Defaults for nuvix + nuvix_admin
-    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON TABLES TO nuvix_admin, nuvix;', p_schema);
-    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON SEQUENCES TO nuvix_admin, nuvix;', p_schema);
-    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON FUNCTIONS TO nuvix_admin, nuvix;', p_schema);
-    EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON ROUTINES TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON TABLES TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON SEQUENCES TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON FUNCTIONS TO nuvix_admin, nuvix;', p_schema);
+    EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON ROUTINES TO nuvix_admin, nuvix;', p_schema);
 
     IF p_type = 'document' THEN
         -- postgres = read-only
@@ -156,12 +159,12 @@ BEGIN
         EXECUTE format('GRANT EXECUTE ON ALL ROUTINES IN SCHEMA %I TO postgres;', p_schema);
 
         -- Defaults for postgres
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT ON TABLES TO postgres;', p_schema);
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT ON SEQUENCES TO postgres;', p_schema);
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT EXECUTE ON FUNCTIONS TO postgres;', p_schema);
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT EXECUTE ON ROUTINES TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT SELECT ON TABLES TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT SELECT ON SEQUENCES TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT EXECUTE ON FUNCTIONS TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT EXECUTE ON ROUTINES TO postgres;', p_schema);
 
-        -- anon + authenticated: no access
+        -- anon + authenticated + service_role: no access
 
     ELSE
         -- postgres = full access
@@ -171,24 +174,24 @@ BEGIN
         EXECUTE format('GRANT ALL ON ALL FUNCTIONS IN SCHEMA %I TO postgres;', p_schema);
         EXECUTE format('GRANT ALL ON ALL ROUTINES IN SCHEMA %I TO postgres;', p_schema);
 
-        -- Defaults for postgres
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON TABLES TO postgres;', p_schema);
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON SEQUENCES TO postgres;', p_schema);
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON FUNCTIONS TO postgres;', p_schema);
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT ALL ON ROUTINES TO postgres;', p_schema);
+        -- Defaults for postgres (ensures new tables/seqs auto-grant)
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON TABLES TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON SEQUENCES TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON FUNCTIONS TO postgres;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT ALL ON ROUTINES TO postgres;', p_schema);
 
-        -- anon + authenticated = read/write (but no CREATE/DROP)
-        EXECUTE format('GRANT USAGE ON SCHEMA %I TO anon, authenticated;', p_schema);
-        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO anon, authenticated;', p_schema);
-        EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO anon, authenticated;', p_schema);
-        EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO anon, authenticated;', p_schema);
-        EXECUTE format('GRANT EXECUTE ON ALL ROUTINES IN SCHEMA %I TO anon, authenticated;', p_schema);
+        -- anon + authenticated + service_role = read/write (but no CREATE/DROP)
+        EXECUTE format('GRANT USAGE ON SCHEMA %I TO anon, authenticated, service_role;', p_schema);
+        EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA %I TO anon, authenticated, service_role;', p_schema);
+        EXECUTE format('GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA %I TO anon, authenticated, service_role;', p_schema);
+        EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO anon, authenticated, service_role;', p_schema);
+        EXECUTE format('GRANT EXECUTE ON ALL ROUTINES IN SCHEMA %I TO anon, authenticated, service_role;', p_schema);
 
-        -- Defaults for anon + authenticated
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated;', p_schema);
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated;', p_schema);
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT EXECUTE ON FUNCTIONS TO anon, authenticated;', p_schema);
-        EXECUTE format('ALTER DEFAULT PRIVILEGES IN SCHEMA %I GRANT EXECUTE ON ROUTINES TO anon, authenticated;', p_schema);
+        -- Defaults for anon + authenticated + service_role (new objects created by postgres)
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO anon, authenticated, service_role;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT USAGE, SELECT ON SEQUENCES TO anon, authenticated, service_role;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT EXECUTE ON FUNCTIONS TO anon, authenticated, service_role;', p_schema);
+        EXECUTE format('ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA %I GRANT EXECUTE ON ROUTINES TO anon, authenticated, service_role;', p_schema);
     END IF;
 END;
 $$;
@@ -258,10 +261,10 @@ BEGIN
             sql := format($p$
                 CREATE POLICY %I ON %s
                 FOR SELECT
+                TO anon, authenticated
                 USING (
                     EXISTS (
-                        SELECT 1
-                        FROM %s_perms p
+                        SELECT 1 FROM %s_perms p
                         WHERE p.row_id IS NULL
                           AND p.permission = 'read'
                           AND auth.roles() && p.roles
@@ -273,10 +276,10 @@ BEGIN
             sql := format($p$
                 CREATE POLICY %I ON %s
                 FOR INSERT
+                TO anon, authenticated
                 WITH CHECK (
                     EXISTS (
-                        SELECT 1
-                        FROM %s_perms p
+                        SELECT 1 FROM %s_perms p
                         WHERE p.row_id IS NULL
                           AND p.permission = 'create'
                           AND auth.roles() && p.roles
@@ -288,25 +291,33 @@ BEGIN
             sql := format($p$
                 CREATE POLICY %I ON %s
                 FOR UPDATE
+                TO anon, authenticated
+                USING (
+                    EXISTS (
+                        SELECT 1 FROM %s_perms p
+                        WHERE p.row_id IS NULL
+                          AND p.permission = 'update'
+                          AND auth.roles() && p.roles
+                    )
+                )
                 WITH CHECK (
                     EXISTS (
-                        SELECT 1
-                        FROM %s_perms p
+                        SELECT 1 FROM %s_perms p
                         WHERE p.row_id IS NULL
                           AND p.permission = 'update'
                           AND auth.roles() && p.roles
                     )
                 );
-            $p$, policy_name, tbl, tbl);
+            $p$, policy_name, tbl, tbl, tbl);
 
         ELSIF perm = 'delete' THEN
             sql := format($p$
                 CREATE POLICY %I ON %s
                 FOR DELETE
+                TO anon, authenticated
                 USING (
                     EXISTS (
-                        SELECT 1
-                        FROM %s_perms p
+                        SELECT 1 FROM %s_perms p
                         WHERE p.row_id IS NULL
                           AND p.permission = 'delete'
                           AND auth.roles() && p.roles
@@ -340,6 +351,7 @@ DECLARE
   tbl_oid oid;
   perms_oid oid;
   schema_id bigint;
+  idx_suffix text := substr(md5(random()::text || clock_timestamp()::text), 1, 8);
 BEGIN
   FOR cmd IN
     SELECT * FROM pg_event_trigger_ddl_commands()
@@ -439,7 +451,7 @@ BEGIN
     -- Add unique index on _id if not exists
     EXECUTE format(
       'CREATE UNIQUE INDEX IF NOT EXISTS %I ON %I.%I (_id)',
-      tname || '_id_key', sname, tname
+      tname || idx_suffix || '_id_key', sname, tname
     );
     PERFORM set_config('system.is_managed_table_create', 'false', true);
 
@@ -466,16 +478,17 @@ BEGIN
     -- Also restrict the backing sequence created by BIGSERIAL
     EXECUTE format('REVOKE ALL ON SEQUENCE %I.%I FROM anon, authenticated', sname, tname || '_perms_id_seq');
     EXECUTE format('GRANT SELECT ON SEQUENCE %I.%I TO anon, authenticated', sname, tname || '_perms_id_seq');
+    EXECUTE format('GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %I.%I_perms TO postgres, service_role, nuvix_admin', sname, tname);
 
     PERFORM set_config('system.skip_perms_check', 'false', true);
 
     EXECUTE format(
-      'CREATE INDEX IF NOT EXISTS %I_perms_roles_gin_idx ON %I.%I_perms USING GIN (roles)',
-      tname, sname, tname
+      'CREATE INDEX IF NOT EXISTS %I_%s_perms_roles_gin_idx ON %I.%I_perms USING GIN (roles)',
+      tname, idx_suffix, sname, tname
     );
     EXECUTE format(
-      'CREATE INDEX IF NOT EXISTS %I_perms_perm_row_idx ON %I.%I_perms (permission, row_id)',
-      tname, sname, tname
+      'CREATE INDEX IF NOT EXISTS %I_%s_perms_perm_row_idx ON %I.%I_perms (permission, row_id)',
+      tname, idx_suffix, sname, tname
     );
 
     EXECUTE format(
@@ -645,10 +658,14 @@ BEGIN
 
         -- STEP 2: Block altering _id columns in managed tables
 	    IF NOT is_perms_table THEN
-            -- Check for DROP COLUMN _id or ALTER COLUMN _id
-            IF normalized_sql ~* '\yDROP\s+COLUMN\s+(IF\s+EXISTS\s+)?(\y_id\y|"_id")' OR
-               normalized_sql ~* '\yALTER\s+COLUMN\s+(\y_id\y|"_id")' THEN
-                RAISE EXCEPTION 'Permission denied: Cannot alter or drop _id column in managed table %.%', r.schema_name, table_info.name;
+           -- Allow nuvix_admin with setting flag
+            IF current_user != 'nuvix_admin' OR 
+            NOT COALESCE(current_setting('system.allow_alter_id', true) = 'true', false) THEN
+                -- Check for DROP COLUMN _id or ALTER COLUMN _id
+                IF normalized_sql ~* '\yDROP\s+COLUMN\s+(IF\s+EXISTS\s+)?(\y_id\y|"_id")' OR
+                   normalized_sql ~* '\yALTER\s+COLUMN\s+(\y_id\y|"_id")' THEN
+                    RAISE EXCEPTION 'Permission denied: Cannot alter or drop _id column in managed table %.%', r.schema_name, table_info.name;
+                END IF;
             END IF;
 
             -- Block renaming of _id columns
@@ -843,87 +860,145 @@ EXECUTE FUNCTION SYSTEM.BLOCK_PERMS_CREATION ();
 
 
 -- system helper: other rls related function 
-CREATE OR REPLACE FUNCTION system.apply_row_policies(tbl regclass)
-RETURNS void AS $$
+    CREATE OR REPLACE FUNCTION system.apply_row_policies(tbl regclass)
+    RETURNS void AS $$
+    DECLARE
+        perm text;
+        tbl_policy_name text;
+        policy_name text;
+        sql text;
+    BEGIN
+        -- Enable RLS always
+        EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY;', tbl);
+
+        -- Loop over CRUD permissions
+        FOR perm IN SELECT unnest(ARRAY['read','create','update','delete']) LOOP
+            policy_name := format('nx_row_%s', perm);
+            tbl_policy_name := format('nx_table_%s', perm);
+
+            -- Drop existing
+            EXECUTE format('DROP POLICY IF EXISTS %I ON %s;', policy_name, tbl);
+            EXECUTE format('DROP POLICY IF EXISTS %I ON %s;', tbl_policy_name, tbl);
+
+            -- Build correct clause depending on action
+            IF perm = 'read' THEN
+                sql := format($p$
+                    CREATE POLICY %I ON %s
+                    FOR SELECT
+                    TO anon, authenticated
+                    USING (
+                        EXISTS (
+                            SELECT 1 FROM %s_perms p
+                            WHERE (p.row_id IS NULL OR p.row_id = %s._id)
+                            AND p.permission = 'read'
+                            AND auth.roles() && p.roles
+                        )
+                    );
+                $p$, policy_name, tbl, tbl, tbl);
+
+            ELSIF perm = 'create' THEN
+                sql := format($p$
+                    CREATE POLICY %I ON %s
+                    FOR INSERT
+                    TO anon, authenticated
+                    WITH CHECK (
+                        EXISTS (
+                            SELECT 1 FROM %s_perms p
+                            WHERE (p.row_id IS NULL OR p.row_id = %s._id)
+                            AND p.permission = 'create'
+                            AND auth.roles() && p.roles
+                        )
+                    );
+                $p$, policy_name, tbl, tbl, tbl);
+
+            ELSIF perm = 'update' THEN
+                sql := format($p$
+                    CREATE POLICY %I ON %s
+                    FOR UPDATE
+                    TO anon, authenticated
+                    USING (
+                        EXISTS (
+                            SELECT 1 FROM %s_perms p
+                            WHERE (p.row_id IS NULL OR p.row_id = %s._id)
+                            AND p.permission = 'update'
+                            AND auth.roles() && p.roles
+                        )
+                    )
+                    WITH CHECK (
+                        EXISTS (
+                            SELECT 1 FROM %s_perms p
+                            WHERE (p.row_id IS NULL OR p.row_id = %s._id)
+                            AND p.permission = 'update'
+                            AND auth.roles() && p.roles
+                        )
+                    );
+                $p$, policy_name, tbl, tbl, tbl, tbl, tbl);
+
+            ELSIF perm = 'delete' THEN
+                sql := format($p$
+                    CREATE POLICY %I ON %s
+                    FOR DELETE
+                    TO anon, authenticated
+                    USING (
+                        EXISTS (
+                            SELECT 1 FROM %s_perms p
+                            WHERE (p.row_id IS NULL OR p.row_id = %s._id)
+                            AND p.permission = 'delete'
+                            AND auth.roles() && p.roles
+                        )
+                    );
+                $p$, policy_name, tbl, tbl, tbl);
+            END IF;
+
+            -- Execute create policy
+            EXECUTE sql;
+        END LOOP;
+    END;
+    $$ LANGUAGE plpgsql;
+
+CREATE OR REPLACE FUNCTION system.set_id_primary(tbl regclass, make_primary boolean)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
 DECLARE
-    perm text;
-    policy_name text;
-    sql text;
+    id_col text := '_id';
+    existing_pk text;
 BEGIN
-    -- Enable RLS always
-    EXECUTE format('ALTER TABLE %s ENABLE ROW LEVEL SECURITY;', tbl);
+    -- Get current primary key
+    SELECT conname INTO existing_pk
+    FROM pg_constraint
+    WHERE conrelid = tbl AND contype = 'p';
 
-    -- Loop over CRUD permissions
-    FOR perm IN SELECT unnest(ARRAY['read','create','update','delete']) LOOP
-        policy_name := format('nx_row_%s', tbl::text, perm);
+    PERFORM set_config('system.allow_alter_id', 'true', true);
+    -- Ensure _id exists and is identity + not null
+    EXECUTE format('ALTER TABLE %s ALTER COLUMN %I SET NOT NULL', tbl, id_col);
 
-        -- Drop existing
-        EXECUTE format('DROP POLICY IF EXISTS %I ON %s;', policy_name, tbl);
-
-        -- Build correct clause depending on action
-        IF perm = 'read' THEN
-            sql := format($p$
-                CREATE POLICY %I ON %s
-                FOR SELECT
-                USING (
-                    EXISTS (
-                        SELECT 1
-                        FROM %s_perms p
-                        WHERE (p.row_id IS NULL OR p.row_id = %s._id)
-                          AND p.permission = 'read'
-                          AND auth.roles() && p.roles
-                    )
-                );
-            $p$, policy_name, tbl, tbl, tbl);
-
-        ELSIF perm = 'create' THEN
-            sql := format($p$
-                CREATE POLICY %I ON %s
-                FOR INSERT
-                WITH CHECK (
-                    EXISTS (
-                        SELECT 1
-                        FROM %s_perms p
-                        WHERE (p.row_id IS NULL OR p.row_id = %s._id)
-                          AND p.permission = 'create'
-                          AND auth.roles() && p.roles
-                    )
-                );
-            $p$, policy_name, tbl, tbl, tbl);
-
-        ELSIF perm = 'update' THEN
-            sql := format($p$
-                CREATE POLICY %I ON %s
-                FOR UPDATE
-                WITH CHECK (
-                    EXISTS (
-                        SELECT 1
-                        FROM %s_perms p
-                        WHERE (p.row_id IS NULL OR p.row_id = %s._id)
-                          AND p.permission = 'update'
-                          AND auth.roles() && p.roles
-                    )
-                );
-            $p$, policy_name, tbl, tbl, tbl);
-
-        ELSIF perm = 'delete' THEN
-            sql := format($p$
-                CREATE POLICY %I ON %s
-                FOR DELETE
-                USING (
-                    EXISTS (
-                        SELECT 1
-                        FROM %s_perms p
-                        WHERE (p.row_id IS NULL OR p.row_id = %s._id)
-                          AND p.permission = 'delete'
-                          AND auth.roles() && p.roles
-                    )
-                );
-            $p$, policy_name, tbl, tbl, tbl);
+    IF make_primary THEN
+        -- Drop existing PK if it's not _id
+        IF existing_pk IS NOT NULL THEN
+            EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', tbl, existing_pk);
         END IF;
 
-        -- Execute create policy
-        EXECUTE sql;
-    END LOOP;
+        -- Add _id as primary key
+        EXECUTE format('ALTER TABLE %s ADD CONSTRAINT %I PRIMARY KEY (%I)', tbl, tbl::text||'_pkey', id_col);
+
+    ELSE
+        -- Remove _id from PK if it is currently PK
+        IF existing_pk IS NOT NULL THEN
+            PERFORM 1
+            FROM pg_constraint
+            WHERE conname = existing_pk
+              AND conrelid = tbl
+              AND contype = 'p'
+              AND conkey = (SELECT array_agg(attnum) FROM pg_attribute WHERE attrelid = tbl AND attname = id_col);
+
+            IF FOUND THEN
+                EXECUTE format('ALTER TABLE %s DROP CONSTRAINT %I', tbl, existing_pk);
+            END IF;
+        END IF;
+    END IF;
+    PERFORM set_config('system.allow_alter_id', 'false', true);
 END;
-$$ LANGUAGE plpgsql;
+$$;
+
