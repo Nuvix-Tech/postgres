@@ -36,4 +36,7 @@ GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA auth TO nuvix_functions_admin, postgres
 
 GRANT USAGE ON SCHEMA system TO nuvix_functions_admin, postgres, service_role;
 GRANT EXECUTE ON FUNCTION create_schema(text, text, text) TO nuvix_functions_admin, postgres, service_role;
+GRANT EXECUTE ON FUNCTION apply_table_policies(regclass) TO nuvix_functions_admin, postgres, service_role;
+GRANT EXECUTE ON FUNCTION apply_row_policies(regclass) TO nuvix_functions_admin, postgres, service_role;
+GRANT EXECUTE ON FUNCTION set_id_primary(regclass, boolean) TO nuvix_functions_admin, postgres, service_role;
 -- migrate:down
