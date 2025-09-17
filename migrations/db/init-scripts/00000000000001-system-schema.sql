@@ -996,3 +996,22 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION system.cleanup_schema()
+RETURNS event_trigger
+SECURITY DEFINER
+LANGUAGE plpgsql AS $$
+DECLARE
+  obj record;
+BEGIN
+  FOR obj IN SELECT * FROM pg_event_trigger_dropped_objects() LOOP
+    IF obj.object_type = 'schema' THEN
+      DELETE FROM system.schemas WHERE name = obj.object_identity;
+    END IF;
+  END LOOP;
+END;
+$$;
+
+DROP EVENT TRIGGER IF EXISTS cleanup_schema_trigger;
+CREATE EVENT TRIGGER cleanup_schema_trigger
+ON sql_drop
+EXECUTE FUNCTION system.cleanup_schema();

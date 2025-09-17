@@ -100,4 +100,34 @@ BEGIN
 END
 $$;
 
+-- system helper: create ext
+CREATE OR REPLACE FUNCTION system.create_extension(
+    p_extname text,
+    p_schema text
+) RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+BEGIN
+    -- Block installing into protected schemas
+    IF p_schema IN ('system', 'core', 'auth') THEN
+        RAISE EXCEPTION 'Extensions cannot be created in reserved schema: %', p_schema;
+    END IF;
+
+    EXECUTE format(
+        'CREATE EXTENSION IF NOT EXISTS %I SCHEMA %I',
+        p_extname,
+        p_schema
+    );
+END;
+$$;
+
+-- Ensure only admin owns this
+ALTER FUNCTION system.create_extension(text, text) OWNER TO nuvix_admin;
+
+-- Restrict execution to trusted roles
+REVOKE ALL ON FUNCTION system.create_extension(text, text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION system.create_extension(text, text) TO nuvix_admin, postgres;
+
+
 -- migrate:down
